@@ -12,7 +12,7 @@ class SquareDataset(Dataset):
 
         results = []
         with open(data_root) as csvfile:
-            reader = csv.reader(csvfile, quoting=csv.QUOTE_NONNUMERIC, delimiter='\t') # change contents to floats
+            reader = csv.reader(csvfile, quoting=csv.QUOTE_NONNUMERIC) # change contents to floats
             for row in reader: # each row is a list
                 results.append(row)
         self.data = torch.Tensor(results)
