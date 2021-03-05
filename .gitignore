@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# NN logs
+lightning_logs/*
+runs/*
