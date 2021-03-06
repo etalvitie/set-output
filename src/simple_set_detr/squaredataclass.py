@@ -73,6 +73,7 @@ def sample_linear_data():
     """
     # Generate initial objects
     theta = uniform(0,1)*2*pi
+    # theta = pi/4
 
     # Generate random speed
     speed = uniform(0,1)

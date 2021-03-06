@@ -15,16 +15,17 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 import torchvision.transforms as T
-from torch.utils.tensorboard import SummaryWriter
-import pytorch_lightning as pl
 torch.set_grad_enabled(True)
+
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from squaredataclass import SquareDataset, sampledata
 from simple_matcher import SimpleMatcher
 
 """
 To run the logger, enter
-    tensorboard --logdir=runs
+    tensorboard --logdir=lightning_logs
 """
 
 
@@ -40,7 +41,7 @@ class Simple_Set_DETR(pl.LightningModule):
     The model achieves ~40 AP on COCO val5k and runs at ~28 FPS on Tesla V100.
     Only batch size 1 supported.
     """
-    def __init__(self, env_len, obj_len, out_set_size, hidden_dim=256, nheads=8,
+    def __init__(self, env_len=1, obj_len=2, out_set_size=4, hidden_dim=256, nheads=8,
                 num_encoder_layers=6, num_decoder_layers=6):
         super().__init__()
 
@@ -60,23 +61,20 @@ class Simple_Set_DETR(pl.LightningModule):
 
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
-        self.linear_attri = nn.Linear(hidden_dim, obj_len + 1)
-        self.linear_pos = nn.Linear(hidden_dim, 2)
-
-        # output positional encodings (object queries)
-        self.query_pos = nn.Parameter(torch.rand(100, hidden_dim))
-
-        # spatial positional encodings
-        # note that in baseline DETR we use sine positional encodings
-        self.row_embed = nn.Parameter(torch.rand(50, hidden_dim // 2))
-        self.col_embed = nn.Parameter(torch.rand(50, hidden_dim // 2))
+        self.linear_attri = nn.Sequential(
+            nn.Linear(hidden_dim, int(hidden_dim/2)),
+            nn.ReLU(),
+            nn.Linear(int(hidden_dim/2), obj_len + 1),
+        )
+        self.linear_pos = nn.Sequential(
+            nn.Linear(hidden_dim, int(hidden_dim/2)),
+            nn.ReLU(),
+            nn.Linear(int(hidden_dim/2), 2),
+        )
 
         # Loss calculation
         self.matcher = SimpleMatcher()
         self.loss_criterion = nn.MSELoss()
-
-        # Logger
-        self.writer = SummaryWriter()
 
 
     def forward(self, x):
@@ -103,11 +101,11 @@ class Simple_Set_DETR(pl.LightningModule):
 
         # finally project transformer outputs to class labels and bounding boxes
         return {'pred_attri': self.linear_attri(h), 
-                'pred_pos': self.linear_pos(h).sigmoid()}
+                'pred_pos': self.linear_pos(h)}
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         return optimizer
     
 
@@ -118,10 +116,10 @@ class Simple_Set_DETR(pl.LightningModule):
 
         # Calculate the loss
         indices, y_matched = self.matcher(pred, y)
+        # y_matched = y
         loss = self.loss_criterion(pred['pred_pos'].view(-1), y_matched.view(-1))
         
         self.log('train_loss', loss)
-        self.writer.add_scalar('Loss/train', loss.item(), batch_idx)
         return loss
     
 
@@ -134,7 +132,6 @@ class Simple_Set_DETR(pl.LightningModule):
         indices, y_matched = self.matcher(pred, y)
         loss = self.loss_criterion(pred['pred_pos'].view(-1), y_matched.view(-1))
         self.log('val_loss', loss)
-        self.writer.add_scalar('Loss/test', loss.item(), batch_idx)
 
 
 def train_pl():
@@ -150,28 +147,47 @@ def train_pl():
     val_data_loader = DataLoader(val_set, batch_size=1, num_workers=8, pin_memory=True)
 
     # Initialize the model
-    model = Simple_Set_DETR(1, 2, 4, hidden_dim=256, nheads=4, num_encoder_layers=3, num_decoder_layers=3)
+    model = Simple_Set_DETR(1, 2, 4, hidden_dim=32, nheads=2, num_encoder_layers=1, num_decoder_layers=1)
+
+    # Early stop callback
+    early_stop_callback = EarlyStopping(
+        monitor='val_loss',
+        min_delta=0.00,
+        patience=3,
+        verbose=False,
+        mode='min'
+    )
 
     # Train
-    trainer = pl.Trainer(gpus=1, precision=16, max_epochs=10, check_val_every_n_epoch=5)
+    trainer = pl.Trainer(
+        gpus=1, 
+        precision=16,
+        max_epochs=20,
+        check_val_every_n_epoch=2,
+        callbacks=[early_stop_callback]
+    )
     trainer.fit(model, train_data_loader, val_data_loader)
 
+    # Evaluate
+    # trainer.test(model, test_dataloaders = val_data_loader)
+    evaluate(model=model)
 
-def evaluate(path=None):
+
+def evaluate(model=None, path=None):
     # load model
-    if path is None:
-        list_ckpts = glob.glob(os.path.join("lightning_logs","version_0","checkpoints","*.ckpt"))
-        latest_ckpt = max(list_ckpts, key=os.path.getctime)
-        print("Using checkpoint ", latest_ckpt)
-        path = latest_ckpt
+    if model is None:
+        if path is None:
+            list_ckpts = glob.glob(os.path.join("lightning_logs","*","checkpoints","*.ckpt"))
+            latest_ckpt = max(list_ckpts, key=os.path.getctime)
+            print("Using checkpoint ", latest_ckpt)
+            path = latest_ckpt
 
-    model = pl.LightningModule.load_from_checkpoint(path)
-    model.freeze()
+        model = Simple_Set_DETR.load_from_checkpoint(path)
+        model.freeze()
 
     # Evaluate
     dataset = SquareDataset(5, generator_type="linear")
     eval_data_loader = DataLoader(dataset, batch_size=1)
-    model.test(test_dataloaders=eval_data_loader)
     for batch, (x, y) in enumerate(eval_data_loader):
         x, y = x, y
         pred = model(x)
@@ -186,4 +202,4 @@ def evaluate(path=None):
 
 if __name__ == "__main__":
     train_pl()
-    evaluate()
+    # evaluate()
