@@ -139,32 +139,33 @@ def train_pl():
     Tests
     """
     # Prepare the dataset
-    dataset = SquareDataset(1000, generator_type="linear")
+    # dataset = SquareDataset(1000, generator_type="linear")
+    dataset = SquareDataset(1000, generator_type="rotation")
     dataset_size = len(dataset)
     train_size = int(dataset_size*0.8)
     train_set, val_set = torch.utils.data.random_split(dataset, [train_size, dataset_size-train_size])
-    train_data_loader = DataLoader(train_set, batch_size=1, num_workers=8, pin_memory=True)
-    val_data_loader = DataLoader(val_set, batch_size=1, num_workers=8, pin_memory=True)
+    train_data_loader = DataLoader(train_set, batch_size=1, num_workers=8, pin_memory=True, shuffle=True)
+    val_data_loader = DataLoader(val_set, batch_size=1, num_workers=8, pin_memory=True, shuffle=True)
 
     # Initialize the model
-    model = Simple_Set_DETR(1, 2, 4, hidden_dim=32, nheads=2, num_encoder_layers=1, num_decoder_layers=1)
+    model = Simple_Set_DETR(1, 2, 4, hidden_dim=128, nheads=2, num_encoder_layers=3, num_decoder_layers=3)
 
     # Early stop callback
-    early_stop_callback = EarlyStopping(
-        monitor='val_loss',
-        min_delta=0.00,
-        patience=3,
-        verbose=False,
-        mode='min'
-    )
+    # early_stop_callback = EarlyStopping(
+    #     monitor='val_loss',
+    #     min_delta=0.00,
+    #     patience=3,
+    #     verbose=False,
+    #     mode='min'
+    # )
 
     # Train
     trainer = pl.Trainer(
         gpus=1, 
         precision=16,
         max_epochs=20,
-        check_val_every_n_epoch=2,
-        callbacks=[early_stop_callback]
+        check_val_every_n_epoch=2
+        # callbacks=[early_stop_callback]
     )
     trainer.fit(model, train_data_loader, val_data_loader)
 
@@ -187,6 +188,7 @@ def evaluate(model=None, path=None):
 
     # Evaluate
     dataset = SquareDataset(5, generator_type="linear")
+    matcher = SimpleMatcher()
     eval_data_loader = DataLoader(dataset, batch_size=1)
     for batch, (x, y) in enumerate(eval_data_loader):
         x, y = x, y
@@ -194,7 +196,8 @@ def evaluate(model=None, path=None):
         print("Start")
         print(x[0, 1:None].reshape(-1,2))
         print("GT")
-        print(y)
+        _, y_matched = matcher(pred, y)
+        print(y_matched)
         print("Prediction")
         print(pred['pred_pos'])
         print()
