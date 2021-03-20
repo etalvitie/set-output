@@ -29,7 +29,7 @@ To run the logger, enter
 """
 
 
-class Simple_Set_DETR(pl.LightningModule):
+class Simple_PointNet(pl.LightningModule):
     """
     Set DETR implementation. Modified from DETR Demo.
 
@@ -52,20 +52,15 @@ class Simple_Set_DETR(pl.LightningModule):
         # We no longer need the CNN preprocessing
         # However, we need an embedding layer
         self.obj_embed = nn.Sequential(
-            nn.Linear(obj_len, int(hidden_dim/2)),
-            nn.ReLU(),
-            nn.Linear(int(hidden_dim/2), hidden_dim),
+            nn.Linear(obj_len, int(hidden_dim)),
+            nn.ReLU()
         )
         self.env_embed = nn.Sequential(
-            nn.Linear(env_len, int(hidden_dim/2)),
+            nn.Linear(env_len, int(hidden_dim)),
             nn.ReLU(),
-            nn.Linear(int(hidden_dim/2), hidden_dim),
         )
         # self.input_set_embed = nn.Parameter(torch.rand(set_size, hidden_dim))
 
-        # create a default PyTorch transformer
-        self.transformer = nn.Transformer(
-            hidden_dim, nheads, num_encoder_layers, num_decoder_layers)
 
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
