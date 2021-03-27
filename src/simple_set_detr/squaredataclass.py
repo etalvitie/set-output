@@ -4,6 +4,7 @@ import math
 from math import pi, cos, sin, floor, ceil
 
 from tqdm import tqdm
+import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -57,15 +58,16 @@ def sample_rotation_data():
     # Calculate the coordinates of all vertices
     v1 = [(math.e)**(1j*theta1 + i*1j*pi/2) for i in range(4)]
     v2 = [(math.e)**(1j*theta2 + i*1j*pi/2) for i in range(4)]
-    v_comb = v1 + v2
 
     # Convert and store into a list
-    data = []
-    for i in range(len(v_comb)): 
-        data.extend([v_comb[i].real, v_comb[i].imag])
+    data1 = []
+    data2 = []
+    for i in range(len(v1)): 
+        data1.extend([v1[i].real, v1[i].imag])
+        data2.extend([v2[i].real, v2[i].imag])
     ##random.shuffle(data)
 
-    return [d_theta] + data
+    return [d_theta] + data1 + data2
 
 def sample_linear_data():
     """
@@ -104,3 +106,9 @@ def sampledata():
         
         newdata += list(i)
     return newdata + [b]
+
+if __name__ == '__main__':
+    for _ in range(5):
+        data = np.array(sample_rotation_data())[1:None]
+        print(data.reshape(-1,2))
+        

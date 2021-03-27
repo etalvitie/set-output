@@ -34,17 +34,21 @@ class Simple_PointNet(pl.LightningModule):
     """
     A naive implementation of pointnet.
     """
-    def __init__(self, env_len=1, obj_len=2, out_set_size=4, hidden_dim=256):
+    def __init__(self, env_len=1, obj_in_len=2, obj_reg_len=2, obj_attri_len=1 ,out_set_size=4, hidden_dim=256):
         super().__init__()
+        self.save_hyperparameters()
 
+        self.hidden_dim = hidden_dim
         self.out_set_size = out_set_size
+        self.obj_in_len = obj_in_len
+        self.obj_reg_len = obj_reg_len
+        self.obj_attri_len = obj_attri_len
         self.env_len = env_len
-        self.obj_len = obj_len
 
         # We no longer need the CNN preprocessing
         # However, we need an embedding layer
         self.obj_embed = nn.Sequential(
-            nn.Linear(obj_len, int(hidden_dim)),
+            nn.Linear(obj_in_len, int(hidden_dim)),
             nn.ReLU(),
             nn.Linear(hidden_dim, int(hidden_dim)),
             nn.ReLU()
@@ -59,21 +63,29 @@ class Simple_PointNet(pl.LightningModule):
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
         self.linear_attri = nn.Sequential(
-            nn.Linear(3 * hidden_dim, int(hidden_dim)),
+            nn.Linear(3 * hidden_dim, int(2*hidden_dim)),
             nn.ReLU(),
-            nn.Linear(int(hidden_dim), obj_len + 1),
+            nn.Linear(2 * hidden_dim, int(hidden_dim)),
+            nn.ReLU(),
+            nn.Linear(int(hidden_dim), obj_attri_len),
+            # nn.Sigmoid()
         )
-        self.linear_pos = nn.Sequential(
+        self.linear_reg = nn.Sequential(
             nn.Linear(3 * hidden_dim, 2 * int(hidden_dim)),
             nn.ReLU(),
             nn.Linear(2 * hidden_dim, int(hidden_dim)),
             nn.ReLU(),
-            nn.Linear(int(hidden_dim), 2),
+            nn.Linear(int(hidden_dim), obj_reg_len),
         )
 
+        # The LSTM version
         # Loss calculation
         self.matcher = SimpleMatcher()
-        self.loss_criterion = nn.MSELoss()
+        self.loss_reg_criterion = nn.MSELoss()
+        self.loss_mask_criterion = nn.MSELoss()
+
+        self.loss_reg_weight = 1
+        self.loss_mask_weight = 1
 
 
     def forward(self, x, debug=False):
@@ -95,7 +107,7 @@ class Simple_PointNet(pl.LightningModule):
         # print(h_env.shape)
 
         # Calculate the object embedding
-        objs = x[:, self.env_len:None].reshape(bs, -1, self.obj_len)
+        objs = x[:, self.env_len:None].reshape(bs, -1, self.obj_reg_len)
         h_objs = self.obj_embed(objs)
         # print(h_objs.shape)                                   # Shape: [BS, N, HIDDEN_DIM]
 
@@ -105,9 +117,10 @@ class Simple_PointNet(pl.LightningModule):
 
         # Zero-padding the object embedding
         pad_size = self.out_set_size - h_objs.shape[1]
-        pad = nn.ZeroPad2d((0, 0, 0, pad_size))
-        h_objs = pad(h_objs)                                    # Shape: [BS, M, HIDDEN_DIM]
-
+        # pad = nn.ZeroPad2d((0, 0, 0, pad_size))
+        # h_objs = pad(h_objs)                                    # Shape: [BS, M, HIDDEN_DIM]
+        pad = torch.rand((bs, pad_size, self.hidden_dim), device=self.device)
+        h_objs = torch.cat((h_objs, pad), dim=1)                # Shape: [BS, M, HIDDEN_DIM]
 
         if debug:
             print("set")
@@ -122,21 +135,49 @@ class Simple_PointNet(pl.LightningModule):
         # h_global = torch.cat((h_env_vector, h_set_vector), dim=1)   # Shape: [BS, 2*HIDDEN_DIM]
 
         # Predict
-        pred_delta = self.linear_pos(h)
+        pred_reg = self.linear_reg(h)
+        pred_attri = self.linear_attri(h)
+        pred_mask = pred_attri[:, :, 0]
         # pred_pos = objs + pred_delta
         if debug:
-            print("pred_delta")
-            print(pred_delta)
+            print("pred_reg")
+            print(pred_reg)
 
         # finally project transformer outputs to class labels and bounding boxes
-        return {'pred_attri': self.linear_attri(h), 
-                'pred_pos': pred_delta}
+        return {'pred_attri': pred_attri,
+                'pred_mask': pred_mask,
+                'pred_reg': pred_reg}
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         return optimizer
-    
+
+
+    def loss_fn(self, pred, gt_label):
+        # Perform the matching
+        match_dict = self.matcher(pred, gt_label)
+
+        # loss for linear regression (position)
+        pred_reg = pred['pred_reg'].view(-1,self.obj_reg_len)
+        pred_matched = pred_reg[match_dict['pred_order']]
+        gt_matched = match_dict['gt_reordered']
+        loss_reg = self.loss_reg_criterion(pred_matched, gt_matched)
+
+        # loss for output mask
+        pred_mask = pred['pred_mask'].squeeze()
+        gt_mask = match_dict['gt_mask']
+        loss_mask = self.loss_mask_criterion(pred_mask, gt_mask)
+        # print("pred_mask")
+        # print(pred_mask)
+        # print("gt_mask")
+        # print(gt_mask)
+
+        # summing all the losses
+        loss = loss_reg * self.loss_reg_weight + loss_mask * self.loss_mask_weight
+
+        return loss, loss_reg, loss_mask
+
 
     def training_step(self, train_batch, batch_idx):
         # Calculate the prediction
@@ -144,13 +185,12 @@ class Simple_PointNet(pl.LightningModule):
         pred = self.forward(x)
 
         # Calculate the loss
-        # pred_new_order, y_matched = self.matcher(pred, y)
-        y_matched = y
-        # y_matched = y
-        pred_matched = pred['pred_pos'].view(-1,2)
-        loss = self.loss_criterion(pred_matched.view(-1), y_matched.view(-1))
+        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
         
         self.log('train_loss', loss)
+        self.log('train_reg_loss', loss_reg)
+        self.log('train_mask_loss', loss_mask)
+
         return loss
     
 
@@ -160,11 +200,48 @@ class Simple_PointNet(pl.LightningModule):
         pred = self.forward(x)
 
         # Calculate the loss
-        pred_new_order, y_matched = self.matcher(pred, y)
-        # y_matched = y
-        pred_matched = pred['pred_pos'].view(-1,2)[pred_new_order]
-        loss = self.loss_criterion(pred_matched.view(-1), y_matched.view(-1))
+        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
+        
         self.log('val_loss', loss)
+        self.log('val_reg_loss', loss_reg)
+        self.log('val_mask_loss', loss_mask)
+
+    
+    def run_on_batch(self, batch):
+        # Calculate the prediction
+        x, y = batch
+        pred = self.forward(x, debug=True)
+        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
+        print("Start environment")
+        print(x[0, 0:self.env_len])
+        print("Start objects")
+        print(x[0, self.env_len:None].reshape(-1,self.obj_in_len))
+
+        # Combine the mask and the output
+        pred_reg = pred['pred_reg']
+        pred_mask = pred['pred_mask'] > 0.5
+        n_pred = torch.sum(pred_mask)
+        
+        pred_reg_masked, idx = torch.sort(pred_reg[pred_mask], dim=0)
+        pred_mask_odd = pred['pred_mask'][pred_mask].view(pred_reg_masked.shape)
+        # print(torch.cat((pred_reg_masked, pred_mask_odd), dim=0))
+        
+        # Reorder the ground truth labels to match the predictions
+        masked_pred = {"pred_reg": pred_reg_masked}
+        match_dict = self.matcher(masked_pred, y)
+        gt_matched, _ = torch.sort(match_dict['gt_reordered'], dim=0)
+
+        print("Prediction")
+        pred_order = match_dict['pred_order']
+        print(pred_reg_masked[pred_order])
+        # print(pred_mask_odd[pred_order])
+        print("GT")
+        print(gt_matched)
+
+        print("Number (pred/gt)")
+        print(n_pred.item(), "/", gt_matched.shape[0])
+
+        print()
 
 
 def train_pl():
@@ -172,9 +249,23 @@ def train_pl():
     Tests
     """
     # Prepare the dataset
+
+    # Square linear
     # dataset = SquareDataset(1000, generator_type="linear")
-    dataset = SquareDataset(10000, generator_type="rotation")
-    # dataset = SimpleNumberDataset(10000, 10, 100, 10)
+
+    # Square rotation
+    # dataset = SquareDataset(10000, generator_type="rotation")
+
+    # Simple Number
+    dataset = SimpleNumberDataset(2000, 10, 1, 0.1)
+    env_len=2
+    obj_in_len=1
+    obj_reg_len=1
+    obj_attri_len=1
+    out_set_size=20
+    hidden_dim=64
+
+    # Prepare the dataloader
     dataset_size = len(dataset)
     train_size = int(dataset_size*0.8)
     train_set, val_set = torch.utils.data.random_split(dataset, [train_size, dataset_size-train_size])
@@ -182,7 +273,12 @@ def train_pl():
     val_data_loader = DataLoader(val_set, batch_size=1, num_workers=8, pin_memory=True)
 
     # Initialize the model
-    model = Simple_PointNet(1, 2, 4, hidden_dim=400)
+    model = Simple_PointNet(env_len=env_len,
+                            obj_in_len=obj_in_len,
+                            obj_reg_len=obj_reg_len,
+                            obj_attri_len=obj_attri_len,
+                            out_set_size=out_set_size,
+                            hidden_dim=hidden_dim)
 
     # Early stop callback
     # early_stop_callback = EarlyStopping(
@@ -197,8 +293,8 @@ def train_pl():
     trainer = pl.Trainer(
         gpus=1, 
         precision=16,
-        max_epochs=4,
-        check_val_every_n_epoch=4,
+        max_epochs=20,
+        # check_val_every_n_epoch=4,
         accumulate_grad_batches=50
         # callbacks=[early_stop_callback]
     )
@@ -223,26 +319,13 @@ def evaluate(model=None, path=None):
 
     # Evaluate
     # dataset = SquareDataset(5, generator_type="linear")
-    dataset = SquareDataset(5, generator_type="rotation")
-    # dataset = SimpleNumberDataset(5, 10, 100, 10)
-    matcher = SimpleMatcher()
+    # dataset = SquareDataset(5, generator_type="rotation")
+    dataset = SimpleNumberDataset(5, 10, 1, 0.1)
     eval_data_loader = DataLoader(dataset, batch_size=1)
-    for batch, (x, y) in enumerate(eval_data_loader):
-        x, y = x, y
-        pred = model(x, debug=True)
-        pred_new_order, y_matched = matcher(pred, y)
-        pred_matched = pred['pred_pos'].view(-1,2)[pred_new_order]
-        print("Start")
-        print(x[0, 1:None].reshape(-1,2))
-        print("GT")        
-        print(y_matched)
-        print("Prediction")
-        print(pred_matched)
-        print("Pred Vel")
-        print(pred['pred_pos'] - x[0, 1:None].reshape(-1))
-        print()
+    for batch_idx, batch in enumerate(eval_data_loader):
+        model.run_on_batch(batch)
 
 
 if __name__ == "__main__":
-    train_pl()
-    # evaluate()
+    # train_pl()
+    evaluate()

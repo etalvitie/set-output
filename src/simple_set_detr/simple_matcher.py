@@ -27,6 +27,14 @@ class SimpleMatcher(nn.Module):
         pred_pos = pred["pred_pos"].squeeze()
         gt_pos = gt.squeeze()
 
+        # Make sure that the input array is 2D
+        if len(pred_pos.shape) == 1:
+            pred_pos = pred_pos.unsqueeze(1)
+            gt_pos = gt_pos.unsqueeze(1)
+
+        # print(pred_pos.shape)
+        # print(gt_pos.shape)
+
         # calculate the position cost
         pos_cost = torch.cdist(pred_pos, gt_pos)
 
@@ -37,7 +45,8 @@ class SimpleMatcher(nn.Module):
         # build the index mapping
         indices = linear_sum_assignment(C)
 
-        # Reorder the ground truth labels
+        # Reorder the labels
+        pred_new_order = indices[0]
         gt_new_order = indices[1]
         gt_reordered = gt_pos[gt_new_order]
 
@@ -49,7 +58,7 @@ class SimpleMatcher(nn.Module):
             print("Ground Truth pos")
             print(gt_reordered)
 
-        return indices, gt_reordered
+        return pred_new_order, gt_reordered
 
 
         

@@ -1,8 +1,9 @@
 import torch
 from torch import nn
+import pytorch_lightning as pl
 from scipy.optimize import linear_sum_assignment
 
-class SimpleMatcher(nn.Module):
+class SimpleMatcher(pl.LightningModule):
     """
     1-to-1 matching of 4 objects.
     """
@@ -23,20 +24,20 @@ class SimpleMatcher(nn.Module):
     
         """
         # Retrieve the basic info
-        bs, num_queries = pred["pred_pos"].shape[:2]
-        pred_pos = pred["pred_pos"].squeeze()
-        gt_pos = gt.squeeze()
+        num_queries = pred["pred_reg"].shape[-2]
+        pred_reg = pred["pred_reg"].squeeze()
+        gt_reg = gt.squeeze()
 
         # Make sure that the input array is 2D
-        if len(pred_pos.shape) == 1:
-            pred_pos = pred_pos.unsqueeze(1)
-            gt_pos = gt_pos.unsqueeze(1)
+        if len(pred_reg.shape) == 1:
+            pred_reg = pred_reg.unsqueeze(1)
+            gt_reg = gt_reg.unsqueeze(1)
 
-        # print(pred_pos.shape)
-        # print(gt_pos.shape)
+        # print(pred_reg.shape)
+        # print(gt_reg.shape)
 
         # calculate the position cost
-        pos_cost = torch.cdist(pred_pos, gt_pos)
+        pos_cost = torch.cdist(pred_reg, gt_reg)
 
         # Convert to Numpy array to make scipy happy
         C = pos_cost.squeeze()
@@ -46,19 +47,32 @@ class SimpleMatcher(nn.Module):
         indices = linear_sum_assignment(C)
 
         # Reorder the labels
-        pred_new_order = indices[0]
-        gt_new_order = indices[1]
-        gt_reordered = gt_pos[gt_new_order]
+        pred_order = indices[0]
+        gt_order = indices[1]
+        gt_reordered = gt_reg[gt_order]
+
+        # Calculate the mask corresponding to the selected outputs
+        gt_mask = torch.zeros((num_queries), device=self.device)
+        gt_mask[pred_order] = 1
+        # gt_mask[~pred_order] = -1
 
         if VERBOSE:
             print("Cost")
             print(C)
             print("Pred pos")
-            print(pred_pos)
+            print(pred_reg)
             print("Ground Truth pos")
             print(gt_reordered)
 
-        return pred_new_order, gt_reordered
+        # return as a dictionary
+        matching_results = {
+            "pred_order": pred_order,
+            "gt_order": gt_order,
+            "gt_mask": gt_mask,
+            "gt_reordered": gt_reordered
+        }
+
+        return matching_results
 
 
         
