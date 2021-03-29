@@ -54,10 +54,10 @@ class deepsetnet(nn.Module):
         
         return y 
 
-def hungarian_loss(output,target, set_dim_transpose): 
+def hungarian_loss(output,target, set_dim): 
       with torch.enable_grad():
-        output = output.reshape(set_dim_transpose).transpose(0,1)
-        target = target.reshape(set_dim_transpose).transpose(0,1)
+        output = output.reshape(set_dim).transpose(0,1)
+        target = target.reshape(set_dim).transpose(0,1)
         target=target[torch.randperm(target.size()[0])]
         diff_mat  = torch.Tensor([[sum((i-j)**2) for i in output] for j in target])
         assignments = scipy.optimize.linear_sum_assignment(diff_mat.numpy())[1]
@@ -66,10 +66,10 @@ def hungarian_loss(output,target, set_dim_transpose):
             loss += (target[i]-output[assignments[i]])**2
       return sum(loss)
 
-def chamfer_loss(output, target, set_dim_transpose):  
+def chamfer_loss(output, target, set_dim):  
     with torch.enable_grad():
-        output = output.reshape(set_dim_transpose).transpose(0,1)
-        target = target.reshape(set_dim_transpose).transpose(0,1)
+        output = output.reshape(set_dim).transpose(0,1)
+        target = target.reshape(set_dim).transpose(0,1)
         diff_mat  = [[sum((i-j)**2) for i in output] for j in target]
         diff_mat2 = [0 for i in range(len(diff_mat))]
         for i in range(len(diff_mat)): 
@@ -79,3 +79,22 @@ def chamfer_loss(output, target, set_dim_transpose):
         min1 = diff_mat2.min(0)
         min2 = diff_mat2.min(1)
     return sum(min2.values) + sum(min1.values)
+
+
+import csv
+class SquareDataset(Dataset):
+    def __init__(self, data_root, label_dim = 1): 
+        self.data = []
+
+        self.label_dim = label_dim
+        results = []
+        with open(data_root) as csvfile:
+            reader = csv.reader(csvfile, quoting=csv.QUOTE_NONNUMERIC) # change contents to floats
+            for row in reader: # each row is a list
+                results.append(row)
+        self.data = torch.Tensor(results)
+        
+    def __getitem__(self,idx): 
+        return self.data[idx][0:-1*self.label_dim], self.data[idx][-1*self.label_dim:]
+    def __len__(self): 
+        return len(self.data)
