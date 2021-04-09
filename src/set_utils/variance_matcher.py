@@ -79,6 +79,7 @@ class VarianceMatcher(pl.LightningModule):
 
             # Calculate the target mask corresponding to the selected outputs
             tgt_mask = torch.zeros(num_queries, device=self.device, dtype=torch.long)
+            print(tgt_mask)
             tgt_mask[pred_order] = 1
 
             # return as a dictionary
