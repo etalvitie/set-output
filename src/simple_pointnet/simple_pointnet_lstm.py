@@ -1,0 +1,376 @@
+import glob
+import math
+import os
+from math import pi, cos, sin, floor, ceil
+from random import random, randint, seed, uniform
+
+import matplotlib.pyplot as plt
+import numpy as np
+import requests
+import torch
+import torch.nn.functional as F
+import torchvision.transforms as T
+from PIL import Image
+from torch import nn
+from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
+
+from datasets.SimpleNumberDataset import SimpleNumberDataset
+from datasets.squaredataclass import SquareDataset, sampledata
+from src.set_utils.simple_matcher import SimpleMatcher
+
+torch.set_grad_enabled(True)
+
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+
+"""
+To run the logger, enter
+    tensorboard --logdir=lightning_logs
+"""
+
+
+class Simple_PointNet(pl.LightningModule):
+    """
+    A naive implementation of pointnet.
+    """
+
+    def __init__(self, env_len=1, obj_in_len=2, obj_reg_len=2, obj_attri_len=2, out_set_size=4, hidden_dim=256,
+                 num_lstm_layer=1):
+        super().__init__()
+        self.save_hyperparameters()
+
+        self.hidden_dim = hidden_dim
+        self.out_set_size = out_set_size
+        self.obj_in_len = obj_in_len
+        self.obj_reg_len = obj_reg_len
+        self.obj_attri_len = obj_attri_len
+        self.env_len = env_len
+        self.num_lstm_layer = num_lstm_layer
+
+        # We no longer need the CNN preprocessing
+        # However, we need an embedding layer
+        self.obj_embed = nn.Sequential(
+            nn.Linear(obj_in_len, int(hidden_dim)),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, int(hidden_dim)),
+            nn.ReLU()
+        )
+        self.env_embed = nn.Sequential(
+            nn.Linear(env_len, int(hidden_dim)),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 3 * int(hidden_dim)),
+            nn.ReLU()
+        )
+        self.set_embed = nn.Sequential(
+            nn.Linear(hidden_dim, 3 * int(hidden_dim)),
+            nn.ReLU()
+        )
+
+        # prediction heads, one extra class for predicting non-empty slots
+        # note that in baseline DETR linear_bbox layer is 3-layer MLP
+        self.decoder = nn.Sequential(
+            nn.Linear(3 * hidden_dim, int(2 * hidden_dim)),
+            nn.ReLU(),
+            nn.Linear(2 * hidden_dim, int(hidden_dim)),
+            nn.ReLU(),
+        )
+        self.linear_attri = nn.Sequential(
+            nn.Linear(int(hidden_dim), obj_attri_len),
+            # nn.Sigmoid()
+        )
+        self.linear_reg = nn.Sequential(
+            nn.Linear(int(hidden_dim), obj_reg_len),
+        )
+        # self.linear_attri = nn.Sequential(
+        #     nn.Linear(3 * hidden_dim, int(2*hidden_dim)),
+        #     nn.ReLU(),
+        #     nn.Linear(2 * hidden_dim, int(hidden_dim)),
+        #     nn.ReLU(),
+        #     nn.Linear(int(hidden_dim), obj_attri_len),
+        #     # nn.Sigmoid()
+        # )
+        # self.linear_reg = nn.Sequential(
+        #     nn.Linear(3 * hidden_dim, 2 * int(hidden_dim)),
+        #     nn.ReLU(),
+        #     nn.Linear(2 * hidden_dim, int(hidden_dim)),
+        #     nn.ReLU(),
+        #     nn.Linear(int(hidden_dim), obj_reg_len),
+        # )
+
+        # New objects generations
+        self.new_obj_net = nn.LSTM(
+            input_size=hidden_dim, hidden_size=3 * hidden_dim,
+            num_layers=self.num_lstm_layer, batch_first=True
+        )
+
+        # Output masks
+        self.mask_softmax = nn.Softmax(dim=2)
+
+        # Loss calculation
+        self.matcher = SimpleMatcher()
+        self.loss_reg_criterion = nn.MSELoss()
+        self.loss_mask_criterion = nn.CrossEntropyLoss()
+
+        self.loss_reg_weight = 1
+        self.loss_mask_weight = 0
+
+    def forward(self, x, debug=False):
+        """
+        Input size: [BATCH_SIZE * (2M+1)]
+        """
+        # batch size
+        bs = x.shape[0]
+
+        # Calculate the environment embedding
+        env = x[:, 0:self.env_len]
+        h_env_vector = self.env_embed(env)
+        # h_env = h_env_vector.repeat((1, self.out_set_size, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
+        h_env = h_env_vector.repeat((self.num_lstm_layer, 1, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
+
+        if debug:
+            print("env")
+            print(env)
+            print(h_env_vector)
+        # print(h_env.shape)
+
+        # Calculate the object embedding
+        objs = x[:, self.env_len:None].reshape(bs, -1, self.obj_in_len)
+        h_objs = self.obj_embed(objs)
+        # print(h_objs.shape)                                   # Shape: [BS, N, HIDDEN_DIM]
+
+        # Obtain the set information by taking the maximum
+        h_set_vector, _ = torch.max(h_objs, dim=1)  # Shape: [BS, HIDDEN_DIM]
+        h_set_vector = self.set_embed(h_set_vector)  # Shape: [BS, 3*HIDDEN_DIM]
+        # h_set = h_set_vector.repeat((1, self.out_set_size, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
+        h_set = h_set_vector.repeat((self.num_lstm_layer, 1, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
+
+        # Zero-padding the object embedding
+        pad_size = self.out_set_size - h_objs.shape[1]
+        # pad = nn.ZeroPad2d((0, 0, 0, pad_size))
+        # h_objs = pad(h_objs)                                    # Shape: [BS, M, HIDDEN_DIM]
+        pad = torch.zeros((bs, pad_size, self.hidden_dim), device=self.device)
+        # Shape: [BS, M-N, HIDDEN_DIM]
+        h_objs = torch.cat((h_objs, pad), dim=1)  # Shape: [BS, M, HIDDEN_DIM]
+
+        if debug:
+            print("set")
+            print(h_set_vector)
+
+        if debug:
+            print("objects")
+            print(h_objs)
+
+        # Concat the three matrix
+        # h = torch.cat((h_objs, h_set, h_env), dim=2)                # Shape: [BS, M, 3*HIDDEN_DIM]
+        # h_global = torch.cat((h_env_vector, h_set_vector), dim=1)   # Shape: [BS, 2*HIDDEN_DIM]
+        h0 = h_set
+        c0 = h_env
+        h, (_, _) = self.new_obj_net(h_objs, (h0, c0))
+        h = self.decoder(h)
+
+        # Predict
+        pred_reg = self.linear_reg(h)
+        pred_attri = self.linear_attri(h)
+
+        # Extract the output masks
+        pred_mask = pred_attri[:, :, 0:2]
+        pred_mask = self.mask_softmax(pred_mask)
+
+        # pred_pos = objs + pred_delta
+        if debug:
+            print("pred_reg")
+            print(pred_reg)
+
+        # finally project transformer outputs to class labels and bounding boxes
+        return {'pred_attri': pred_attri,
+                'pred_mask': pred_mask,
+                'pred_reg': pred_reg}
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
+
+    def loss_fn(self, pred, gt_label):
+        # Perform the matching
+        match_dict = self.matcher(pred, gt_label)
+
+        # loss for linear regression (position)
+        pred_reg = pred['pred_reg'].view(-1, self.obj_reg_len)
+        pred_matched = pred_reg[match_dict['pred_order']]
+        gt_matched = match_dict['gt_reordered']
+        loss_reg = self.loss_reg_criterion(pred_matched, gt_matched)
+
+        # loss for output mask
+        pred_mask = pred['pred_mask'].squeeze()
+        gt_mask = match_dict['gt_mask']
+        loss_mask = self.loss_mask_criterion(pred_mask, gt_mask)
+        # print("pred_mask")
+        # print(pred_mask)
+        # print("gt_mask")
+        # print(gt_mask)
+
+        # summing all the losses
+        loss = loss_reg * self.loss_reg_weight + loss_mask * self.loss_mask_weight
+
+        return loss, loss_reg, loss_mask
+
+    def training_step(self, train_batch, batch_idx):
+        # Calculate the prediction
+        x, y = train_batch
+        pred = self.forward(x)
+
+        # Calculate the loss
+        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
+
+        self.log('train_loss', loss)
+        self.log('train_reg_loss', loss_reg)
+        self.log('train_mask_loss', loss_mask)
+
+        return loss
+
+    def validation_step(self, val_batch, batch_idx):
+        # Calculate the prediction
+        x, y = val_batch
+        pred = self.forward(x)
+
+        # Calculate the loss
+        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
+
+        self.log('val_loss', loss)
+        self.log('val_reg_loss', loss_reg)
+        self.log('val_mask_loss', loss_mask)
+
+    def run_on_batch(self, batch, debug=False):
+        # Calculate the prediction
+        x, y = batch
+        pred = self.forward(x, debug=debug)
+        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
+        print("Start environment")
+        print(x[0, 0:self.env_len])
+        print("Start objects")
+        print(x[0, self.env_len:None].reshape(-1, self.obj_in_len))
+
+        # Combine the mask and the output
+        pred_reg = pred['pred_reg']
+        pred_mask = pred['pred_mask']
+        pred_mask = (pred_mask[:, :, 1] < pred_mask[:, :, 0])
+        n_pred = torch.sum(pred_mask)
+
+        print("Prob")
+        print(pred['pred_mask'])
+
+        pred_reg_masked, idx = torch.sort(pred_reg[pred_mask], dim=0)
+        # pred_mask_odd = pred['pred_mask'][pred_mask].view(pred_reg_masked.shape)
+        # print(torch.cat((pred_reg_masked, pred_mask_odd), dim=0))
+
+        # Reorder the ground truth labels to match the predictions
+        masked_pred = {"pred_reg": pred_reg_masked}
+        match_dict = self.matcher(masked_pred, y)
+        gt_matched, _ = torch.sort(match_dict['gt_reordered'], dim=0)
+
+        print("Prediction")
+        pred_order = match_dict['pred_order']
+        print(pred_reg_masked[pred_order])
+        # print(pred_mask_odd[pred_order])
+        print("GT")
+        print(gt_matched)
+
+        print("Number (pred/gt)")
+        print(n_pred.item(), "/", gt_matched.shape[0])
+
+        print()
+
+
+def train_pl():
+    """
+    Tests
+    """
+    # Prepare the dataset
+
+    # Square linear
+    # dataset = SquareDataset(1000, generator_type="linear")
+
+    # Square rotation
+    dataset = SquareDataset(10000, generator_type="rotation")
+    env_len = 1
+    obj_in_len = 2
+    obj_reg_len = 2
+    obj_attri_len = 2
+    out_set_size = 4
+    hidden_dim = 256
+
+    # Simple Number
+    # dataset = SimpleNumberDataset(2000, 10, 1, 0.1)
+    # env_len=2
+    # obj_in_len=1
+    # obj_reg_len=1
+    # obj_attri_len=2
+    # out_set_size=20
+    # hidden_dim=32
+
+    # Prepare the dataloader
+    dataset_size = len(dataset)
+    train_size = int(dataset_size * 0.8)
+    train_set, val_set = torch.utils.data.random_split(dataset, [train_size, dataset_size - train_size])
+    train_data_loader = DataLoader(train_set, batch_size=1, shuffle=True)  # num_workers=8, pin_memory=True,
+    val_data_loader = DataLoader(val_set, batch_size=1, pin_memory=True)
+
+    # Initialize the model
+    model = Simple_PointNet(env_len=env_len,
+                            obj_in_len=obj_in_len,
+                            obj_reg_len=obj_reg_len,
+                            obj_attri_len=obj_attri_len,
+                            out_set_size=out_set_size,
+                            hidden_dim=hidden_dim)
+
+    # Early stop callback
+    # early_stop_callback = EarlyStopping(
+    #     monitor='val_loss',
+    #     min_delta=0.00,
+    #     patience=3,
+    #     verbose=False,
+    #     mode='min'
+    # )
+
+    # Train
+    trainer = pl.Trainer(
+        gpus=1,
+        precision=16,
+        max_epochs=4,
+        # check_val_every_n_epoch=4,
+        accumulate_grad_batches=50,
+        profiler="simple"
+        # callbacks=[early_stop_callback]
+    )
+    trainer.fit(model, train_data_loader, val_data_loader)
+
+    # Evaluate
+    # trainer.test(model, test_dataloaders = val_data_loader)
+    evaluate(model=model)
+
+
+def evaluate(model=None, path=None):
+    # load model
+    if model is None:
+        if path is None:
+            list_ckpts = glob.glob(os.path.join("lightning_logs", "*", "checkpoints", "*.ckpt"))
+            latest_ckpt = max(list_ckpts, key=os.path.getctime)
+            print("Using checkpoint ", latest_ckpt)
+            path = latest_ckpt
+
+        model = Simple_PointNet.load_from_checkpoint(path)
+        model.freeze()
+
+    # Evaluate
+    # dataset = SquareDataset(5, generator_type="linear")
+    # dataset = SquareDataset(5, generator_type="rotation")
+    dataset = SimpleNumberDataset(3, 10, 1, 0.1)
+    eval_data_loader = DataLoader(dataset, batch_size=1)
+    for batch_idx, batch in enumerate(eval_data_loader):
+        model.run_on_batch(batch)
+
+
+if __name__ == "__main__":
+    train_pl()
+    # evaluate()

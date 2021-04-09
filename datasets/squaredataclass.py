@@ -1,11 +1,13 @@
 import csv
-from random import random, randint, seed, uniform
 import math
 from math import pi, cos, sin, floor, ceil
+from random import random, randint, seed, uniform
 
-from tqdm import tqdm
+import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
+
 
 class SquareDataset(Dataset):
     generator_type=None
@@ -33,16 +35,16 @@ class SquareDataset(Dataset):
         self.generator_type = generator_type 
 
         data = []
-        for i in tqdm(range(1000)):
+        for i in tqdm(range(num)):
             data.append(generator())
 
         self.data = torch.Tensor(data)
         
     def __getitem__(self,idx):
-        if self.generator_type == "linear":
+        if self.generator_type == "basic":
             return self.data[idx][0:-1], self.data[idx][-1]
         else:
-            return self.data[idx][0:9], self.data[idx][9:None]
+            return self.data[idx][0:9], self.data[idx][9:None].reshape(-1,2)
 
     def __len__(self): 
         return len(self.data)
@@ -57,15 +59,16 @@ def sample_rotation_data():
     # Calculate the coordinates of all vertices
     v1 = [(math.e)**(1j*theta1 + i*1j*pi/2) for i in range(4)]
     v2 = [(math.e)**(1j*theta2 + i*1j*pi/2) for i in range(4)]
-    v_comb = v1 + v2
 
     # Convert and store into a list
-    data = []
-    for i in range(len(v_comb)): 
-        data.extend([v_comb[i].real, v_comb[i].imag])
+    data1 = []
+    data2 = []
+    for i in range(len(v1)): 
+        data1.extend([v1[i].real, v1[i].imag])
+        data2.extend([v2[i].real, v2[i].imag])
     ##random.shuffle(data)
 
-    return [d_theta] + data
+    return [d_theta] + data1 + data2
 
 def sample_linear_data():
     """
@@ -73,6 +76,7 @@ def sample_linear_data():
     """
     # Generate initial objects
     theta = uniform(0,1)*2*pi
+    # theta = pi/4
 
     # Generate random speed
     speed = uniform(0,1)
@@ -103,3 +107,9 @@ def sampledata():
         
         newdata += list(i)
     return newdata + [b]
+
+if __name__ == '__main__':
+    for _ in range(5):
+        data = np.array(sample_rotation_data())[1:None]
+        print(data.reshape(-1,2))
+        

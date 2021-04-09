@@ -1,12 +1,13 @@
 import csv
-from random import random, randint, seed, uniform
 import math
 from math import pi, cos, sin, floor, ceil
+from random import random, randint, seed, uniform
 
-from tqdm import tqdm
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
+
 
 class SimpleNumberDataset(Dataset):
     generator_type=None
@@ -47,10 +48,10 @@ class SimpleNumberDataset(Dataset):
 
                 input_data.append(new_num)
             
-            self.data.append( torch.Tensor(input_data + output_data) )
+            self.data.append( torch.Tensor([threshold, len(output_data)] + input_data + output_data) )
         
     def __getitem__(self,idx):
-        return self.data[idx][0:self.set_size], self.data[idx][self.set_size:None]
+        return self.data[idx][0:(2+self.set_size)], self.data[idx][(2+self.set_size):None]
 
     def __len__(self): 
         return len(self.data)

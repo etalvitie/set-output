@@ -1,0 +1,7 @@
+env_len: 2
+hidden_dim: 32
+num_lstm_layer: 1
+obj_attri_len: 2
+obj_in_len: 1
+obj_reg_len: 1
+out_set_size: 20
