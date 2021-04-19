@@ -72,6 +72,7 @@ class VariancePointNet(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(int(hidden_dim), 2 * obj_reg_len),
         )
+        self.relu = nn.ReLU()
 
         # New objects generations
         # self.new_obj_net = nn.LSTM(
@@ -149,6 +150,7 @@ class VariancePointNet(pl.LightningModule):
         pred_reg_result = self.linear_reg(h)
         pred_reg = pred_reg_result[:, :, 0:self.obj_reg_len]
         pred_reg_var = pred_reg_result[:, :, self.obj_reg_len:None]
+        pred_reg_var = torch.abs(pred_reg_var)
         pred_attri = self.linear_attri(h)
 
         # Extract the output masks
@@ -167,7 +169,7 @@ class VariancePointNet(pl.LightningModule):
                 'pred_reg_var': pred_reg_var}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
         return optimizer
 
     def loss_fn(self, pred, gt_label):
@@ -181,26 +183,39 @@ class VariancePointNet(pl.LightningModule):
 
         # Iterate through all batches
         for batch_idx, match_result in enumerate(match_results):
-            # Loss for regression (position)
+            pred_raw = pred["pred_reg"][batch_idx]
+            gt_raw = gt_label[batch_idx]
+            pred_raw_var = pred["pred_reg_var"][batch_idx]
             pred_matched = match_result['pred_reordered']
             gt_matched = match_result['gt_reordered']
-            loss_reg += self.loss_reg_criterion(pred_matched, gt_matched)
+
+            # Loss for regression (position)
+            # loss_reg += self.loss_reg_criterion(pred_matched, gt_matched)
+            # loss_reg += self.loss_reg_criterion(pred_raw, gt_raw)
+
+            # Alternative:
+            # print(gt_matched)
+            # print(pred_matched)
+            # loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_raw_var) + 0.5*torch.log(pred_raw_var))
+            loss_reg += torch.mean((gt_raw - pred_raw) ** 2)
 
             # Loss for regression variance
-            pred_diff_square = match_result['pred_diff'] ** 2
-            zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
-            loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
+            # pred_diff_square = match_result['pred_diff'] ** 2
+            # zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
+            # loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
+            loss_reg_var += torch.mean((torch.abs(pred_raw_var) - torch.abs(gt_raw - pred_raw))**2)
 
             # Loss for output mask
-            pred_mask = pred['pred_mask']
+            pred_mask = pred['pred_mask'][batch_idx]
             tgt_mask = match_result['tgt_mask']
+            # print("Pred mask", pred_mask.shape)
+            # print("Tgt mask", tgt_mask.shape)
             loss_mask = self.loss_mask_criterion(pred_mask, tgt_mask)
 
         # summing all the losses
         loss = (loss_reg + loss_reg_var) * self.loss_reg_weight + loss_mask * self.loss_mask_weight
 
         return loss, loss_reg, loss_reg_var, loss_mask
-
 
     def training_step(self, train_batch, batch_idx):
         # Calculate the prediction
@@ -233,42 +248,37 @@ class VariancePointNet(pl.LightningModule):
     def run_on_batch(self, batch, debug=False):
         # Calculate the prediction
         x, y = batch
-        pred = self.forward(x, debug=debug)
-        loss, loss_reg, loss_mask = self.loss_fn(pred, y)
+        pred = self.forward(x)
+
+        # Calculate the loss
+        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, y)
+
         print("Start environment")
         print(x[0, 0:self.env_len])
         print("Start objects")
         print(x[0, self.env_len:None].reshape(-1, self.obj_in_len))
 
-        # Combine the mask and the output
-        pred_reg = pred['pred_reg']
-        pred_mask = pred['pred_mask']
-        pred_mask = (pred_mask[:, :, 1] < pred_mask[:, :, 0])
-        n_pred = torch.sum(pred_mask)
+        # Considers the masks
+        # pred_reg = pred['pred_reg']
+        # pred_mask = pred['pred_mask']
+        # pred_mask = (pred_mask[:, :, 1] < pred_mask[:, :, 0])
+        # n_pred = torch.sum(pred_mask)
+        # print("Prob")
+        # print(pred['pred_mask'])
 
-        print("Prob")
-        print(pred['pred_mask'])
+        # print("Number (pred/gt)")
+        # print(n_pred.item(), "/", gt_matched.shape[0])
 
-        pred_reg_masked, idx = torch.sort(pred_reg[pred_mask], dim=0)
-        # pred_mask_odd = pred['pred_mask'][pred_mask].view(pred_reg_masked.shape)
-        # print(torch.cat((pred_reg_masked, pred_mask_odd), dim=0))
-
-        # Reorder the ground truth labels to match the predictions
-        masked_pred = {"pred_reg": pred_reg_masked}
-        match_dict = self.matcher(masked_pred, y)
-        gt_matched, _ = torch.sort(match_dict['gt_reordered'], dim=0)
-
-        print("Prediction")
-        pred_order = match_dict['pred_order']
-        print(pred_reg_masked[pred_order])
-        # print(pred_mask_odd[pred_order])
-        print("GT")
-        print(gt_matched)
-
-        print("Number (pred/gt)")
-        print(n_pred.item(), "/", gt_matched.shape[0])
-
-        print()
+        # View the matched results
+        match_results = self.matcher(pred, y)
+        for i, match_dict in enumerate(match_results):
+            print("Pred_var_reordered")
+            print(match_dict["pred_var_reordered"])
+            print("Pred_reordered")
+            print(match_dict["pred_reordered"])
+            print("GT_reordered")
+            print(match_dict["gt_reordered"])
+            print()
 
 
 def train_pl():
@@ -278,16 +288,22 @@ def train_pl():
     # Prepare the dataset
 
     # Square linear
-    # dataset = SquareDataset(1000, generator_type="linear")
+    # dataset = SquareDataset(5000, generator_type="linear")
+    # env_len = 1
+    # obj_in_len = 2
+    # obj_reg_len = 2
+    # obj_attri_len = 2
+    # out_set_size = 4
+    # hidden_dim = 128
 
     # Square rotation
-    dataset = SquareDataset(10000, generator_type="rotation")
+    dataset = SquareDataset(5000, generator_type="rotation", generate_noise=True)
     env_len = 1
     obj_in_len = 2
     obj_reg_len = 2
     obj_attri_len = 2
     out_set_size = 4
-    hidden_dim = 256
+    hidden_dim = 512
 
     # Simple Number
     # dataset = SimpleNumberDataset(2000, 10, 1, 0.1)
@@ -355,8 +371,8 @@ def evaluate(model=None, path=None):
 
     # Evaluate
     # dataset = SquareDataset(5, generator_type="linear")
-    # dataset = SquareDataset(5, generator_type="rotation")
-    dataset = SimpleNumberDataset(3, 10, 1, 0.1)
+    dataset = SquareDataset(5, generator_type="rotation", generate_noise=False)
+    # dataset = SimpleNumberDataset(3, 10, 1, 0.1)
     eval_data_loader = DataLoader(dataset, batch_size=1)
     for batch_idx, batch in enumerate(eval_data_loader):
         model.run_on_batch(batch)

@@ -22,7 +22,7 @@ class SquareDataset(Dataset):
                 results.append(row)
         self.data = torch.Tensor(results)
 
-    def __init__(self, num, generator_type="basic"):
+    def __init__(self, num, generator_type="basic", generate_noise=False):
         """
         Generate SquareDataset using data generation.
         Available generators: basic[default], linear movement, rotation.
@@ -32,11 +32,11 @@ class SquareDataset(Dataset):
             "linear": sample_linear_data,
             "rotation": sample_rotation_data
         }[generator_type]
-        self.generator_type = generator_type 
+        self.generator_type = generator_type
 
         data = []
         for i in tqdm(range(num)):
-            data.append(generator())
+            data.append(generator(generate_noise))
 
         self.data = torch.Tensor(data)
         
@@ -50,7 +50,7 @@ class SquareDataset(Dataset):
         return len(self.data)
 
 
-def sample_rotation_data():
+def sample_rotation_data(generate_noise=False):
     # Generate two random angles
     theta1 = uniform(0,1)*2*pi
     theta2 = uniform(0,1)*2*pi
@@ -63,9 +63,13 @@ def sample_rotation_data():
     # Convert and store into a list
     data1 = []
     data2 = []
-    for i in range(len(v1)): 
+    for i in range(len(v1)):
+        noise = np.zeros(2)
+        if generate_noise:
+            noise = np.random.normal(loc=0, scale=0.2, size=2)
+
         data1.extend([v1[i].real, v1[i].imag])
-        data2.extend([v2[i].real, v2[i].imag])
+        data2.extend([v2[i].real+noise[0], v2[i].imag]+noise[1])
     ##random.shuffle(data)
 
     return [d_theta] + data1 + data2
