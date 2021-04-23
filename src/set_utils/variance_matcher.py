@@ -57,10 +57,12 @@ class VarianceMatcher(pl.LightningModule):
             if mode == "EM":
                 for i in range(num_queries):
                     mean = pred_reg[batch_idx][i]
-                    covar = torch.diag(pred_reg_var[batch_idx][i])
+                    covar = pred_reg_var[batch_idx][i]
                     x = gt[batch_idx]
                     # print(mean, covar)
-                    cost[i, :] = normal_log_prob(mean, covar, x)
+                    cost_ = normal_log_prob(mean, covar, x)
+                    assert not torch.isnan(cost_[0])
+                    cost[i,:] = cost_
                 # cost = torch.log(cost)          # Convert into log
             else:
                 cost = torch.cdist(pred_reg[batch_idx], gt[batch_idx])
@@ -117,26 +119,34 @@ class VarianceMatcher(pl.LightningModule):
 def normal_log_prob(mean, covar, data):
     """
     Calculates the log of the probability density.
+
+    Args:
+        mean: Length D vector.
+        covar: Notice that this is a length D vector rather than the complete covariance matrix.
+        data: Queries. Shape : [N, D].
+
+    Returns:
+
     """
     # Assert the dimensions of the inputs
     d = mean.shape[0]
-    assert covar.shape == (d, d)
+    assert covar.shape[0] == d
     assert data.shape[1] == d
     num_queries, _ = data.shape
 
     # Calculates the probability density
-    prob = torch.zeros(num_queries, device=data.device)
-    for i in range(num_queries):
-        x = data[i]
-        diff = x - mean
-        diff_t = diff.view(d, 1)
-        exp = (-0.5) * diff @ torch.inverse(covar) @ diff_t
-        scale = torch.sqrt(
-            (2*pi)**d * torch.det(covar)
-        )
-        prob[i] = torch.exp(exp) / scale
+    # prob = torch.zeros(num_queries, device=data.device)
+    x = data
+    diff = x - mean
+    # diff_t = diff.transpose()
+    exp = (-0.5) * diff**2 / covar
+    scale = torch.sqrt(2*pi*covar)
+    prob = torch.exp(exp) / scale
 
     # Takes the log
     log_prob = torch.log(prob + 1e-10)
+
+    # Added across multiple variables
+    log_prob = torch.sum(log_prob, dim=1)
 
     return log_prob

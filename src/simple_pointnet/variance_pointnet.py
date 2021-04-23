@@ -150,7 +150,7 @@ class VariancePointNet(pl.LightningModule):
         pred_reg_result = self.linear_reg(h)
         pred_reg = pred_reg_result[:, :, 0:self.obj_reg_len]
         pred_reg_var = pred_reg_result[:, :, self.obj_reg_len:None]
-        pred_reg_var = torch.abs(pred_reg_var)
+        pred_reg_var = pred_reg_var**2 + 1e-6           # Prevent zero covariance causing errors
         pred_attri = self.linear_attri(h)
 
         # Extract the output masks
@@ -169,7 +169,7 @@ class VariancePointNet(pl.LightningModule):
                 'pred_reg_var': pred_reg_var}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         return optimizer
 
     def loss_fn(self, pred, gt_label):
@@ -196,14 +196,14 @@ class VariancePointNet(pl.LightningModule):
             # Alternative:
             # print(gt_matched)
             # print(pred_matched)
-            # loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_raw_var) + 0.5*torch.log(pred_raw_var))
-            loss_reg += torch.mean((gt_raw - pred_raw) ** 2)
+            loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_raw_var) + 0.5*torch.log(pred_raw_var))
+            # loss_reg += torch.mean((gt_raw - pred_raw) ** 2)
 
             # Loss for regression variance
             # pred_diff_square = match_result['pred_diff'] ** 2
             # zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
             # loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
-            loss_reg_var += torch.mean((torch.abs(pred_raw_var) - torch.abs(gt_raw - pred_raw))**2)
+            # loss_reg_var += torch.mean((torch.abs(pred_raw_var) - torch.abs(gt_raw - pred_raw))**2)
 
             # Loss for output mask
             pred_mask = pred['pred_mask'][batch_idx]
@@ -346,7 +346,7 @@ def train_pl():
         precision=16,
         max_epochs=4,
         # check_val_every_n_epoch=4,
-        accumulate_grad_batches=50,
+        accumulate_grad_batches=16,
         profiler="simple"
         # callbacks=[early_stop_callback]
     )
@@ -379,5 +379,5 @@ def evaluate(model=None, path=None):
 
 
 if __name__ == "__main__":
-    train_pl()
-    # evaluate()
+    # train_pl()
+    evaluate()
