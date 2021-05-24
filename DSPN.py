@@ -22,7 +22,6 @@ class deepsetnet(nn.Module):
     masks: True if we are using variable size sets with masks 
     '''
     def __init__(self, encoder, latent_dim, set_dim, n_iters, masks = False):
-        
         ## Becuase of how the data turned out, set dim needs to be the transpose of the real set dim
         super().__init__()
         self.masks = masks

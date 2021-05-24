@@ -4,7 +4,7 @@ import scipy.optimize
 import math
 class Velenvironment():
     def __init__(self, env_name, sticky_action_prob = 0.1, difficulty_ramping = True, random_seed = None):
-        self.env = environment.Environment(env_name, sticky_action_prob = 0.1, difficulty_ramping = True, random_seed = None)
+        self.env = environment.Environment(env_name, sticky_action_prob = sticky_action_prob, difficulty_ramping = difficulty_ramping, random_seed = random_seed)
         self.past_state = self.env.continuous_state()
     # Wrapper for env.act
     def act(self, a):

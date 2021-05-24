@@ -300,6 +300,33 @@ def train(sample, policy_net, target_net, optimizer):
     loss.backward()
     optimizer.step()
 
+def model_net_train(sample, model_net, target_net, optimizer):
+    # Batch is a list of namedtuple's, the following operation returns samples grouped by keys
+    batch_samples = transition(*zip(*sample))
+
+    # states, next_states are of tensor (BATCH_SIZE, in_channel, 10, 10) - inline with pytorch NCHW format
+    # actions, rewards, is_terminal are of tensor (BATCH_SIZE, 1)
+    states = torch.cat(batch_samples.state)
+    next_states = torch.cat(batch_samples.next_state)
+    actions = torch.cat(batch_samples.action)
+    rewards = torch.cat(batch_samples.reward)
+    is_terminal = torch.cat(batch_samples.is_terminal)
+    num_batch = len(states)
+
+    # Obtain a batch of Q(S_t, A_t) and compute the forward pass.
+    # Note: policy_network output Q-values for all the actions of a state, but all we need is the A_t taken at time t
+    # in state S_t.  Thus we gather along the columns and get the Q-values corresponds to S_t, A_t.
+    # Q_s_a is of size (BATCH_SIZE, 1).
+    states_list = states.view((num_batch, -1))
+    actions_list = actions.view((num_batch, -1))
+    input_comb = torch.cat([actions_list, states_list], dim=1)
+    pred = model_net(input_comb)
+
+
+    # Zero gradients, backprop, update the weights of policy_net
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
 ################################################################################################################
 # dqn
@@ -326,6 +353,7 @@ def dqn(env, replay_off, target_off, output_file_name, store_intermediate_result
 
     # Instantiate networks, optimizer, loss and buffer
     policy_net = QNetwork(in_channels, num_actions).to(device)
+    obj_net = variance_pointnet(env_len=1, obj_in_len=in_channels, obj_reg_len=4, obj_attri_len=7, out_set_size=40, hidden_dim=256)
     replay_start_size = 0
     if not target_off:
         target_net = QNetwork(in_channels, num_actions).to(device)
@@ -337,6 +365,7 @@ def dqn(env, replay_off, target_off, output_file_name, store_intermediate_result
 
     # optimizer = optim.RMSprop(policy_net.parameters(), lr=step_size, alpha=SQUARED_GRAD_MOMENTUM, centered=True, eps=MIN_SQUARED_GRAD)
     optimizer = torch.optim.Adam(policy_net.parameters(), lr=step_size)
+    obj_optimizer = torch.optim.Adam(obj_net.parameters(), lr=step_size)
 
     # Set initial values
     e_init = 0
@@ -410,6 +439,7 @@ def dqn(env, replay_off, target_off, output_file_name, store_intermediate_result
             if t % TRAINING_FREQ == 0 and sample is not None:
                 if target_off:
                     train(sample, policy_net, policy_net, optimizer)
+                    model_net_train(sample, obj_net, obj_net, obj_optimizer)
                 else:
                     policy_net_update_counter += 1
                     train(sample, policy_net, target_net, optimizer)

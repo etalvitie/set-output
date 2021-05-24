@@ -288,22 +288,22 @@ def train_pl():
     # Prepare the dataset
 
     # Square linear
-    # dataset = SquareDataset(5000, generator_type="linear")
-    # env_len = 1
-    # obj_in_len = 2
-    # obj_reg_len = 2
-    # obj_attri_len = 2
-    # out_set_size = 4
-    # hidden_dim = 128
-
-    # Square rotation
-    dataset = SquareDataset(5000, generator_type="rotation", generate_noise=True)
+    dataset = SquareDataset(5000, generator_type="linear")
     env_len = 1
     obj_in_len = 2
     obj_reg_len = 2
     obj_attri_len = 2
     out_set_size = 4
-    hidden_dim = 512
+    hidden_dim = 384
+
+    # Square rotation
+    # dataset = SquareDataset(5000, generator_type="rotation", generate_noise=True)
+    # env_len = 1
+    # obj_in_len = 2
+    # obj_reg_len = 2
+    # obj_attri_len = 2
+    # out_set_size = 4
+    # hidden_dim = 512
 
     # Simple Number
     # dataset = SimpleNumberDataset(2000, 10, 1, 0.1)
