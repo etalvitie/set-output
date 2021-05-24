@@ -45,11 +45,12 @@ class Velenvironment():
         current_state = self.env.continuous_state()
         
         for i in range(len(current_state)): 
+            one_hot = [0 for i in range(len(current_state))]
+            one_hot[i] = 1 
+            one_hot = tuple(one_hot)
             if current_state[i] != [] and self.past_state[i] != []: 
             
-                one_hot = [0 for i in range(len(current_state))]
-                one_hot[i] = 1 
-                one_hot = tuple(one_hot)
+                
                 l1 = np.asarray(current_state[i])
                 l2 = np.asarray(self.past_state[i])
 
