@@ -2,7 +2,10 @@ from minatar import environment
 import numpy as np
 import scipy.optimize 
 import math
+
 class Velenvironment():
+    MAX_TYPES = 6
+
     def __init__(self, env_name, sticky_action_prob = 0.1, difficulty_ramping = True, random_seed = None):
         self.env = environment.Environment(env_name, sticky_action_prob = sticky_action_prob, difficulty_ramping = difficulty_ramping, random_seed = random_seed)
         self.past_state = self.env.continuous_state()
@@ -22,6 +25,9 @@ class Velenvironment():
     # Wrapper for env.state_shape
     def state_shape(self):
         return self.env.state_shape()
+
+    def num_obj_types(self):
+        return self.MAX_TYPES
 
     # All MinAtar environments have 6 actions
     def num_actions(self):

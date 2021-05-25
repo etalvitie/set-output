@@ -1,6 +1,9 @@
 # Pytorch Runs
 **/lightning_logs/
 
+# Dataset
+**/*.npy
+
 # IDEs
 .idea/
 
