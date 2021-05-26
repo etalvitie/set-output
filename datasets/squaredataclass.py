@@ -74,7 +74,7 @@ def sample_rotation_data(generate_noise=False):
 
     return [d_theta] + data1 + data2
 
-def sample_linear_data():
+def sample_linear_data(*args):
     """
     Squares with linear velocities.
     """
@@ -98,7 +98,7 @@ def sample_linear_data():
     return [speed] + data_0 + data_1
 
 
-def sampledata(): 
+def sampledata(*args): 
     b = uniform(0,1)
     a = b*2*pi
     data = [(math.e)**(1j*a + i*1j*pi/2) for i in range(4)]
