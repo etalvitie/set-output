@@ -2,16 +2,14 @@ from minatar import environment
 import numpy as np
 import scipy.optimize 
 import math
-
 class Velenvironment():
-    MAX_TYPES = 6
-
     def __init__(self, env_name, sticky_action_prob = 0.1, difficulty_ramping = True, random_seed = None):
-        self.env = environment.Environment(env_name, sticky_action_prob = sticky_action_prob, difficulty_ramping = difficulty_ramping, random_seed = random_seed)
+       
+        self.env = environment.Environment(env_name, sticky_action_prob = 0.1, difficulty_ramping = True, random_seed = None)
         self.past_state = self.env.continuous_state()
     # Wrapper for env.act
     def act(self, a):
-        self.last_state = self.env.continuous_state()
+        self.past_state = self.env.continuous_state()
         return self.env.act(a)
 
     # Wrapper for env.state
@@ -25,9 +23,6 @@ class Velenvironment():
     # Wrapper for env.state_shape
     def state_shape(self):
         return self.env.state_shape()
-
-    def num_obj_types(self):
-        return self.MAX_TYPES
 
     # All MinAtar environments have 6 actions
     def num_actions(self):
@@ -48,14 +43,17 @@ class Velenvironment():
         self.env.close_display()
 
     def continuous_state(self):
+
+            
         current_state = self.env.continuous_state()
         
         for i in range(len(current_state)): 
             one_hot = [0 for i in range(len(current_state))]
             one_hot[i] = 1 
             one_hot = tuple(one_hot)
-            if current_state[i] != [] and self.past_state[i] != []: 
+            if  current_state[i] != [] and self.past_state[i] != [] : 
             
+                
                 
                 l1 = np.asarray(current_state[i])
                 l2 = np.asarray(self.past_state[i])
@@ -72,15 +70,56 @@ class Velenvironment():
                     y = current_state[i][curindex][1]
                     xvel = x - self.past_state[i][pastindex][0]
                     yvel = y - self.past_state[i][pastindex][1]
-                    current_state[i][curindex] = (x,y,xvel,yvel) + one_hot + (0,)
+                    current_state[i][curindex] = (x,y,xvel,yvel) + one_hot + (1,)
 
             #Set velocities of unmatched objects to 0 
             for j in range(len(current_state[i])):
-                if len(current_state[i][j]) != 4: 
+                if len(current_state[i][j]) == 2: 
                     current_state[i][j] = (current_state[i][j][0],current_state[i][j][1],0,0) + one_hot + (1,)
+          
+        return current_state
+    
+    def new_objects(self):
+
+            
+        current_state = self.env.continuous_state()
+        new_state = []
+        for i in range(len(current_state)): 
+            one_hot = [0 for i in range(len(current_state))]
+            one_hot[i] = 1 
+            one_hot = tuple(one_hot)
+            if  current_state[i] != [] and self.past_state[i] != [] : 
+            
+                
+               
+                l1 = np.asarray(current_state[i])
+                l2 = np.asarray(self.past_state[i])
+
+                #Match objects from the past and present state 
+                dist_matrix = scipy.spatial.distance_matrix(l1,l2)
+                assignmentscur, assignmentspast = scipy.optimize.linear_sum_assignment(dist_matrix)
+                ##print(str(current_state[i]) + ":" + str(self.past_state[i]))
+                #calculate and insert velocities for matched objects 
+                for j in range(len(assignmentscur)): 
+                    curindex = assignmentscur[j]
+                    pastindex = assignmentspast[j]
+                    x = current_state[i][curindex][0]
+                    y = current_state[i][curindex][1]
+                    xvel = x - self.past_state[i][pastindex][0]
+                    yvel = y - self.past_state[i][pastindex][1]
+                    current_state[i][curindex] = (x,y) + one_hot 
+            
+            #Set velocities of unmatched objects to 0 
+            for j in range(len(current_state[i])):
+                if len(current_state[i][j]) == 2: 
+                    new_state +=  [list((current_state[i][j][0],current_state[i][j][1]) + one_hot)]
+        for i in range(3 - len(new_state)): 
+            new_state += [[0,0] + [0 for i in range(len(current_state))]]
+
+              
             
         
-        return current_state
+        return new_state
     # Return a string that represents the current state of the environment
     # (Not including the RNG state)
     def save_state(self):
