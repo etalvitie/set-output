@@ -38,19 +38,26 @@ class VariancePointNet(pl.LightningModule):
         self.env_len = env_len
         self.num_lstm_layer = num_lstm_layer
 
+        self.dropout = nn.Dropout(p=0.1)
+
         # Embedding layers
         self.obj_embed = nn.Sequential(
-            nn.Linear(obj_in_len, int(hidden_dim)),
+            nn.Linear(obj_in_len, 64),
             nn.ReLU(),
-            nn.Linear(hidden_dim, int(hidden_dim)),
+        )
+        self.obj_encoder = nn.Sequential(
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1024),
+            self.dropout,
             nn.ReLU()
         )
+
         self.env_embed = nn.Sequential(
-            nn.Linear(env_len, int(hidden_dim)),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, int(hidden_dim)),
+            nn.Linear(env_len, 64),
             nn.ReLU()
         )
+
         self.set_embed = nn.Sequential(
             nn.Linear(hidden_dim, int(hidden_dim)),
             nn.ReLU()
@@ -58,19 +65,29 @@ class VariancePointNet(pl.LightningModule):
 
         # Output heads
         self.linear_attri = nn.Sequential(
-            nn.Linear(3 * hidden_dim, int(2*hidden_dim)),
+            nn.Linear(1152, 512),
             nn.ReLU(),
-            nn.Linear(2 * hidden_dim, int(hidden_dim)),
+            self.dropout,
+            nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(int(hidden_dim), obj_attri_len),
+            self.dropout,
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            self.dropout,
+            nn.Linear(128, obj_attri_len),
             # nn.Sigmoid()
         )
         self.linear_reg = nn.Sequential(
-            nn.Linear(3 * hidden_dim, 2 * int(hidden_dim)),
+            nn.Linear(1152, 512),
             nn.ReLU(),
-            nn.Linear(2 * hidden_dim, int(hidden_dim)),
+            self.dropout,
+            nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(int(hidden_dim), 2 * obj_reg_len),
+            self.dropout,
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            self.dropout,
+            nn.Linear(128, 2 * obj_reg_len),
         )
         self.relu = nn.ReLU()
 
@@ -91,17 +108,33 @@ class VariancePointNet(pl.LightningModule):
         self.loss_reg_weight = 1
         self.loss_mask_weight = 0
 
-    def forward(self, x, debug=False):
+    def forward(self, objs, env, debug=False):
         """
         Input size: [BATCH_SIZE * (2M+1)]
         """
         # batch size
-        bs = x.shape[0]
+        bs = env.shape[0]
+
+        # Calculate the object embedding
+        # objs = x[:, self.env_len:None].reshape(bs, -1, self.obj_in_len)
+        objs = self.obj_embed(objs)                             # Shape: [BS, N, 64]
+        h_objs = self.obj_encoder(objs)
+        # print(h_objs.shape)                                   # Shape: [BS, N, HIDDEN_DIM]
+
+        # Zero-padding the object embedding
+        # pad_size = self.out_set_size - h_objs.shape[1]
+        # # pad = nn.ZeroPad2d((0, 0, 0, pad_size))
+        # # h_objs = pad(h_objs)                                                      # Shape: [BS, M, HIDDEN_DIM]
+        # pad = torch.zeros((bs, pad_size, self.hidden_dim), device=self.device)      # Shape: [BS, M-N, HIDDEN_DIM]
+        # h_objs = torch.cat((h_objs, pad), dim=1)  # Shape: [BS, M, HIDDEN_DIM]
+
+        in_set_size = h_objs.shape[1]
 
         # Calculate the environment embedding
-        env = x[:, 0:self.env_len]
+        env = env
+        # env = x[:, 0:self.env_len]
         h_env_vector = self.env_embed(env)
-        h_env = h_env_vector.repeat((1, self.out_set_size, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
+        h_env = h_env_vector.repeat((1, in_set_size, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
         # h_env = h_env_vector.repeat((self.num_lstm_layer, 1, 1))  # Shape: [BS, M, 3*HIDDEN_DIM]
 
         if debug:
@@ -110,23 +143,10 @@ class VariancePointNet(pl.LightningModule):
             print(h_env_vector)
         # print(h_env.shape)
 
-        # Calculate the object embedding
-        objs = x[:, self.env_len:None].reshape(bs, -1, self.obj_in_len)
-        h_objs = self.obj_embed(objs)
-        # print(h_objs.shape)                                   # Shape: [BS, N, HIDDEN_DIM]
-
         # Obtain the set information by taking the maximum
         h_set_vector, _ = torch.max(h_objs, dim=1)                      # Shape: [BS, HIDDEN_DIM]
-        h_set_vector = self.set_embed(h_set_vector)                     # Shape: [BS, 3*HIDDEN_DIM]
-        h_set = h_set_vector.repeat((1, self.out_set_size, 1))          # Shape: [BS, M, 3*HIDDEN_DIM]
+        h_set = h_set_vector.repeat((1, in_set_size, 1))                # Shape: [BS, M, 3*HIDDEN_DIM]
         # h_set = h_set_vector.repeat((self.num_lstm_layer, 1, 1))      # Shape: [BS, M, 3*HIDDEN_DIM]
-
-        # Zero-padding the object embedding
-        pad_size = self.out_set_size - h_objs.shape[1]
-        # pad = nn.ZeroPad2d((0, 0, 0, pad_size))
-        # h_objs = pad(h_objs)                                                      # Shape: [BS, M, HIDDEN_DIM]
-        pad = torch.zeros((bs, pad_size, self.hidden_dim), device=self.device)      # Shape: [BS, M-N, HIDDEN_DIM]
-        h_objs = torch.cat((h_objs, pad), dim=1)  # Shape: [BS, M, HIDDEN_DIM]
 
         if debug:
             print("set")
@@ -137,7 +157,7 @@ class VariancePointNet(pl.LightningModule):
             print(h_objs)
 
         # Concat the three matrix
-        h = torch.cat((h_objs, h_set, h_env), dim=2)                # Shape: [BS, M, 3*HIDDEN_DIM]
+        h = torch.cat((objs, h_set, h_env), dim=2)                # Shape: [BS, M, 3*HIDDEN_DIM]
         # h_global = torch.cat((h_env_vector, h_set_vector), dim=1)   # Shape: [BS, 2*HIDDEN_DIM]
 
         # LSTM version
@@ -185,25 +205,26 @@ class VariancePointNet(pl.LightningModule):
         for batch_idx, match_result in enumerate(match_results):
             pred_raw = pred["pred_reg"][batch_idx]
             gt_raw = gt_label[batch_idx]
-            pred_raw_var = pred["pred_reg_var"][batch_idx]
+            pred_var_raw = pred["pred_reg_var"][batch_idx]
+            pred_var_reordered = match_result["pred_var_reordered"]
             pred_matched = match_result['pred_reordered']
             gt_matched = match_result['gt_reordered']
 
             # Loss for regression (position)
             # loss_reg += self.loss_reg_criterion(pred_matched, gt_matched)
-            # loss_reg += self.loss_reg_criterion(pred_raw, gt_raw)
+            loss_reg += self.loss_reg_criterion(pred_raw, gt_raw)
 
             # Alternative:
             # print(gt_matched)
             # print(pred_matched)
-            loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_raw_var) + 0.5*torch.log(pred_raw_var))
-            # loss_reg += torch.mean((gt_raw - pred_raw) ** 2)
+            # loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_raw_var) + 0.5*torch.log(pred_raw_var))
+            # loss_reg += torch.mean((gt_matched - pred_matched) ** 2)
 
             # Loss for regression variance
-            # pred_diff_square = match_result['pred_diff'] ** 2
-            # zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
-            # loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
-            # loss_reg_var += torch.mean((torch.abs(pred_raw_var) - torch.abs(gt_raw - pred_raw))**2)
+            pred_diff_square = match_result['pred_diff'] ** 2
+            zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
+            loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
+            loss_reg_var += torch.mean((torch.abs(pred_var_raw) - torch.abs(gt_raw - pred_raw))**2)
 
             # Loss for output mask
             pred_mask = pred['pred_mask'][batch_idx]
@@ -219,11 +240,11 @@ class VariancePointNet(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         # Calculate the prediction
-        x, y = train_batch
-        pred = self.forward(x)
+        s, a, sprime, r = train_batch
+        pred = self.forward(s, a)
 
         # Calculate the loss
-        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, y)
+        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, sprime)
 
         self.log('train_loss', loss)
         self.log('train_reg_loss', loss_reg)
@@ -234,11 +255,11 @@ class VariancePointNet(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         # Calculate the prediction
-        x, y = val_batch
-        pred = self.forward(x)
+        s, a, sprime, r = val_batch
+        pred = self.forward(s, a)
 
         # Calculate the loss
-        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, y)
+        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, sprime)
 
         self.log('val_loss', loss)
         self.log('val_reg_loss', loss_reg)

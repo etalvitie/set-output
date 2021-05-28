@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch.optim as optim
 import time
+import json
 
 import random, numpy, argparse, logging, os
 import numpy as np
@@ -184,9 +185,9 @@ def get_cont_state(cont_s, max_obj=40):
     cont_state = torch.vstack(cont_state)
 
     # Zero pad to the maximum allowed dimension
-    size_pad = max_obj - cont_state.shape[0]
-    pad = torch.zeros((size_pad, obj_len), device=device)
-    cont_state = torch.cat([cont_state, pad])
+    # size_pad = max_obj - cont_state.shape[0]
+    # pad = torch.zeros((size_pad, obj_len), device=device)
+    # cont_state = torch.cat([cont_state, pad])
 
     # Unsqueeze for the batch dimension
     cont_state = cont_state.unsqueeze(0)
@@ -429,11 +430,14 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
 
         # Initialize the environment and start state
         env.reset()
+        frame_count = 0
         s = get_state(env.state())
         s_cont = get_cont_state(env.continuous_state())   # Change
 
         is_terminated = False
         while(not is_terminated) and t < NUM_FRAMES:
+            s = get_state(env.state())
+            s_cont = get_cont_state(env.continuous_state())  # Change
             if not offline_dataset:
                 # Generate data
                 s_cont_prime, action, reward, is_terminated = world_dynamics(t, replay_start_size, num_actions, s_cont, env, policy_net)
@@ -468,21 +472,25 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
                 s_cont_prime, action, reward, is_terminated = world_dynamics(t, replay_start_size, num_actions, s_cont, env, None)
 
                 # Reshape the object states into 1d list
-                s_cont_prime_vector = s_cont_prime.reshape((num_obj*obj_len)).cpu().numpy()
-                s_cont_vector = s_cont.reshape((num_obj*obj_len)).cpu().numpy()
+                s_cont_prime_vector = s_cont_prime
+                s_cont_prime_vector = s_cont_prime_vector.cpu().numpy()
+                s_cont_vector = s_cont.cpu().numpy()
+                if len(s_cont_prime_vector) == 0:
+                    continue
 
                 # One hot labeling the action
                 action_vector = np.zeros(action_len)
                 action_vector[action] = 1
 
                 # Aggregate inside a single vector
-                record = [reward[0][0].item(), action_len, num_obj, obj_len]
-                record.extend(action_vector.tolist())
-                record.extend(s_cont_vector.tolist())
-                record.extend(s_cont_prime_vector.tolist())
+                record = (s_cont_vector.tolist(), action_vector.tolist(), s_cont_prime_vector.tolist(), reward[0][0].item())
 
                 # Append to the dataset collection
-                dataset.append(record)
+                frame_count += 1
+                if frame_count == 1:
+                    continue
+                else:
+                    dataset.append(record)
 
             G += reward.item()
 
@@ -520,9 +528,9 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
             }, output_file_name + "_checkpoint")
 
     # Store the collected dataset
-    dataset = np.vstack(dataset)
-    filename = "dataset_" + "random_" + str(NUM_FRAMES) + ".npy"
-    np.save(filename, dataset)
+    filename = "dataset_" + "random_" + str(NUM_FRAMES) + ".json"
+    with open(filename, 'w') as json_file:
+        json.dump(dataset, json_file, indent=6)
 
     # Print final logging info
     logging.info("Avg return: " + str(numpy.around(avg_return, 2)) + " | Time per frame: " + str((time.time()-t_start)/t))

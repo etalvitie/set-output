@@ -64,12 +64,15 @@ class VarianceMatcher(pl.LightningModule):
                     assert not torch.isnan(cost_[0])
                     cost[i,:] = cost_
                 # cost = torch.log(cost)          # Convert into log
+                cost = -cost
             else:
                 cost = torch.cdist(pred_reg[batch_idx], gt[batch_idx])
                 # print(cost)
 
             # Convert to Numpy array to make scipy happy
-            C = cost.squeeze()
+            C = cost
+            if len(cost.shape)== 3:
+                C = C.squeeze()
             C = C.cpu().numpy()
 
             # Build the index mapping which leads the maximum probability
@@ -92,6 +95,13 @@ class VarianceMatcher(pl.LightningModule):
             tgt_mask = torch.zeros(num_queries, device=self.device, dtype=torch.long)
             tgt_mask[pred_order] = 1
 
+            # Find the disappearing objects
+            if (tgt_mask == 1).all():
+                pred_unmatched = torch.Tensor()
+            else:
+                unmatched_mask = tgt_mask != 1
+                pred_unmatched = pred_reg[batch_idx][unmatched_mask]
+
             # return as a dictionary
             match_result = {
                 "pred_order": pred_order,
@@ -101,6 +111,7 @@ class VarianceMatcher(pl.LightningModule):
                 "gt_reordered": gt_reordered,
                 "pred_diff": pred_diff,
                 "tgt_mask": tgt_mask,
+                "pred_unmatched": pred_unmatched
             }
             # print("Pred_before:")
             # print(pred_reg[batch_idx])
@@ -150,3 +161,24 @@ def normal_log_prob(mean, covar, data):
     log_prob = torch.sum(log_prob, dim=1)
 
     return log_prob
+
+
+"""
+Test Code
+"""
+
+if __name__ == "__main__":
+    points2 = [[[99, 98], [50, 49], [20, 19], [18, 17]]]
+    points1 = [[[98, 99], [19, 20], [17, 18]]]
+
+    pred_reg = torch.Tensor(points1)
+    gt = torch.Tensor(points2)
+    pred = {
+        "pred_reg": pred_reg,
+        "pred_reg_var": torch.ones(pred_reg.shape)
+    }
+
+    matcher = VarianceMatcher()
+    match_results = matcher(pred, gt)
+    print(match_results[0]["pred_reordered"])
+    print(match_results[0]["gt_reordered"])
