@@ -87,7 +87,10 @@ class VariancePointNet(pl.LightningModule):
             nn.Linear(256, 128),
             nn.ReLU(),
             self.dropout,
-            nn.Linear(128, 2 * obj_reg_len),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            self.dropout,
+            nn.Linear(64, 2 * obj_reg_len),
         )
         self.relu = nn.ReLU()
 

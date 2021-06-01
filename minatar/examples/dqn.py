@@ -23,29 +23,25 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch.optim as optim
 import time
-import json
 
 import random, numpy, argparse, logging, os
-import numpy as np
-from tqdm import tqdm
 
 from collections import namedtuple
-from MinAtar.minatar import Environment, Velenvironment
-from src.simple_pointnet.variance_pointnet import VariancePointNet
+from minatar import Environment
 
 ################################################################################################################
 # Constants
-
+#
 ################################################################################################################
 BATCH_SIZE = 32
 REPLAY_BUFFER_SIZE = 100000
 TARGET_NETWORK_UPDATE_FREQ = 1000
 TRAINING_FREQ = 1
-NUM_FRAMES = 5000
+NUM_FRAMES = 5000000
 FIRST_N_FRAMES = 100000
 REPLAY_START_SIZE = 5000
 END_EPSILON = 0.1
-STEP_SIZE = 2.5e-4
+STEP_SIZE = 0.00025
 GRAD_MOMENTUM = 0.95
 SQUARED_GRAD_MOMENTUM = 0.95
 MIN_SQUARED_GRAD = 0.01
@@ -65,55 +61,36 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #
 ################################################################################################################
 class QNetwork(nn.Module):
-    def __init__(self, in_channels, num_actions, hidden_dim=128):
+    def __init__(self, in_channels, num_actions):
 
         super(QNetwork, self).__init__()
 
-        # # One hidden 2D convolution layer:
-        # #   in_channels: variable
-        # #   out_channels: 16
-        # #   kernel_size: 3 of a 3x3 filter matrix
-        # #   stride: 1
-        # self.conv = nn.Conv2d(in_channels, 16, kernel_size=３, stride=1)
-        #
-        # # Final fully connected hidden layer:
-        # #   the number of linear unit depends on the output of the conv
-        # #   the output consist 128 rectified units
-        # def size_linear_unit(size, kernel_size=3, stride=1):
-        #     return (size - (kernel_size - 1) - 1) // stride + 1
-        # num_linear_units = size_linear_unit(10) * size_linear_unit(10) * 16
-        # self.fc_hidden = nn.Linear(in_features=num_linear_units, out_features=128)
+        # One hidden 2D convolution layer:
+        #   in_channels: variable
+        #   out_channels: 16
+        #   kernel_size: 3 of a 3x3 filter matrix
+        #   stride: 1
+        self.conv = nn.Conv2d(in_channels, 16, kernel_size=3, stride=1)
 
-        # Pointnet
-        self.embed = nn.Sequential(
-            nn.Linear(in_features=in_channels, out_features=int(hidden_dim/2)),
-            nn.ReLU(),
-            nn.Linear(int(hidden_dim/2), hidden_dim),
-            nn.ReLU(),
-        )
+        # Final fully connected hidden layer:
+        #   the number of linear unit depends on the output of the conv
+        #   the output consist 128 rectified units
+        def size_linear_unit(size, kernel_size=3, stride=1):
+            return (size - (kernel_size - 1) - 1) // stride + 1
+        num_linear_units = size_linear_unit(10) * size_linear_unit(10) * 16
+        self.fc_hidden = nn.Linear(in_features=num_linear_units, out_features=128)
 
         # Output layer:
-        self.output = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, int(hidden_dim/2)),
-            nn.ReLU(),
-            nn.Linear(int(hidden_dim / 2), int(hidden_dim / 4)),
-            nn.ReLU(),
-            nn.Linear(int(hidden_dim / 4), num_actions)
-        )
+        self.output = nn.Linear(in_features=128, out_features=num_actions)
 
     # As per implementation instructions according to pytorch, the forward function should be overwritten by all
     # subclasses
     def forward(self, x):
-        # Input embedding
-        x = self.embed(x)
-
-        # Max pooling
-        x, _ = torch.max(x, dim=1)
+        # Rectified output from the first conv layer
+        x = f.relu(self.conv(x))
 
         # Rectified output from the final hidden layer
-        # x = f.relu(self.fc_hidden(x.view(x.size(0), -1)))
+        x = f.relu(self.fc_hidden(x.view(x.size(0), -1)))
 
         # Returns the output from the fully-connected linear layer
         return self.output(x)
@@ -161,39 +138,7 @@ class replay_buffer:
 #
 ################################################################################################################
 def get_state(s):
-    s = np.array(s)
     return (torch.tensor(s, device=device).permute(2, 0, 1)).unsqueeze(0).float()
-
-def get_cont_state(cont_s, max_obj=40):
-    """
-    Return the continuous state of the environment as a torch array.
-
-    :param cont_s: Continuous state.
-    :return: Torch tensor of shape [M*(2+N)]. M is the number of objects. N is the number of categories.
-    """
-    N = len(cont_s)
-    obj_len = len(cont_s[0][0])
-
-    # Collect all the states
-    cont_state = []
-    for i in range(N):
-        for obj in cont_s[i]:
-            # Append to the list
-            cont_state.append(torch.tensor(obj, device=device))
-
-    # Convert into one torch tensor
-    cont_state = torch.vstack(cont_state)
-
-    # Zero pad to the maximum allowed dimension
-    # size_pad = max_obj - cont_state.shape[0]
-    # pad = torch.zeros((size_pad, obj_len), device=device)
-    # cont_state = torch.cat([cont_state, pad])
-
-    # Unsqueeze for the batch dimension
-    cont_state = cont_state.unsqueeze(0)
-
-    return cont_state
-
 
 
 ################################################################################################################
@@ -214,7 +159,7 @@ def get_cont_state(cont_s, max_obj=40):
 # Output: next state, action, reward, is_terminated
 #
 ################################################################################################################
-def world_dynamics(t, replay_start_size, num_actions, s_cont, env, policy_net):
+def world_dynamics(t, replay_start_size, num_actions, s, env, policy_net):
 
     # A uniform random policy is run before the learning starts
     if t < replay_start_size:
@@ -232,21 +177,16 @@ def world_dynamics(t, replay_start_size, num_actions, s_cont, env, policy_net):
             # State is 10x10xchannel, max(1)[1] gives the max action value (i.e., max_{a} Q(s, a)).
             # view(1,1) shapes the tensor to be the right form (e.g. tensor([[0]])) without copying the
             # underlying tensor.  torch._no_grad() avoids tracking history in autograd.
-            if policy_net is None:
-                # Randomly select an action
-                action = torch.randint(0, num_actions, (1, 1))
-            else:
-                with torch.no_grad():
-                    action = policy_net(s_cont).max(1)[1].view(1, 1)
+            with torch.no_grad():
+                action = policy_net(s).max(1)[1].view(1, 1)
 
     # Act according to the action and observe the transition and reward
     reward, terminated = env.act(action)
 
     # Obtain s_prime
-    # s_prime = get_state(env.state())
-    s_cont_prime = get_cont_state(env.continuous_state())    # Change
+    s_prime = get_state(env.state())
 
-    return s_cont_prime, action, torch.tensor([[reward]], device=device).float(), torch.tensor([[terminated]], device=device)
+    return s_prime, action, torch.tensor([[reward]], device=device).float(), torch.tensor([[terminated]], device=device)
 
 
 ################################################################################################################
@@ -305,35 +245,6 @@ def train(sample, policy_net, target_net, optimizer):
     loss.backward()
     optimizer.step()
 
-def model_net_train(sample, model_net, target_net, optimizer):
-    # Batch is a list of namedtuple's, the following operation returns samples grouped by keys
-    batch_samples = transition(*zip(*sample))
-
-    # states, next_states are of tensor (BATCH_SIZE, in_channel, 10, 10) - inline with pytorch NCHW format
-    # actions, rewards, is_terminal are of tensor (BATCH_SIZE, 1)
-    states = torch.cat(batch_samples.state)
-    next_states = torch.cat(batch_samples.next_state)
-    actions = torch.cat(batch_samples.action)
-    rewards = torch.cat(batch_samples.reward)
-    is_terminal = torch.cat(batch_samples.is_terminal)
-    num_batch = len(states)
-
-    # Obtain a batch of Q(S_t, A_t) and compute the forward pass.
-    # Note: policy_network output Q-values for all the actions of a state, but all we need is the A_t taken at time t
-    # in state S_t.  Thus we gather along the columns and get the Q-values corresponds to S_t, A_t.
-    # Q_s_a is of size (BATCH_SIZE, 1).
-    states_list = states.view((num_batch, -1))
-    actions_list = actions.view((num_batch, -1))
-    input_comb = torch.cat([actions_list, states_list], dim=1)
-    pred = model_net(input_comb)
-
-    loss = model_net.loss_fn(pred, next_states)
-    print("loss", loss)
-
-    # Zero gradients, backprop, update the weights of policy_net
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
 
 ################################################################################################################
 # dqn
@@ -352,15 +263,14 @@ def model_net_train(sample, model_net, target_net, optimizer):
 #   step_size: step-size for RMSProp optimizer
 #
 #################################################################################################################
-def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, store_intermediate_result=False, load_path=None, step_size=STEP_SIZE):
+def dqn(env, replay_off, target_off, output_file_name, store_intermediate_result=False, load_path=None, step_size=STEP_SIZE):
 
     # Get channels and number of actions specific to each game
-    in_channels = 9
+    in_channels = env.state_shape()[2]
     num_actions = env.num_actions()
 
     # Instantiate networks, optimizer, loss and buffer
     policy_net = QNetwork(in_channels, num_actions).to(device)
-    obj_net = VariancePointNet(env_len=1, obj_in_len=in_channels, obj_reg_len=4, obj_attri_len=7, out_set_size=40, hidden_dim=256)
     replay_start_size = 0
     if not target_off:
         target_net = QNetwork(in_channels, num_actions).to(device)
@@ -370,9 +280,7 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
         r_buffer = replay_buffer(REPLAY_BUFFER_SIZE)
         replay_start_size = REPLAY_START_SIZE
 
-    # optimizer = optim.RMSprop(policy_net.parameters(), lr=step_size, alpha=SQUARED_GRAD_MOMENTUM, centered=True, eps=MIN_SQUARED_GRAD)
-    optimizer = torch.optim.Adam(policy_net.parameters(), lr=step_size)
-    obj_optimizer = torch.optim.Adam(obj_net.parameters(), lr=step_size)
+    optimizer = optim.RMSprop(policy_net.parameters(), lr=step_size, alpha=SQUARED_GRAD_MOMENTUM, centered=True, eps=MIN_SQUARED_GRAD)
 
     # Set initial values
     e_init = 0
@@ -403,7 +311,6 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
 
         # Set to training mode
         policy_net.train()
-        obj_net.train()
         if not target_off:
             target_net.train()
 
@@ -417,87 +324,48 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
     e = e_init
     policy_net_update_counter = policy_net_update_counter_init
     t_start = time.time()
-
-    # Offline dataset collection
-    dataset = []
-    num_obj = 40
-    obj_len = 9
-    action_len = env.num_actions()
-
-    for t in tqdm(range(NUM_FRAMES)):
+    while t < NUM_FRAMES:
         # Initialize the return for every episode (we should see this eventually increase)
         G = 0.0
 
         # Initialize the environment and start state
         env.reset()
-        frame_count = 0
         s = get_state(env.state())
-        s_cont = get_cont_state(env.continuous_state())   # Change
-
         is_terminated = False
         while(not is_terminated) and t < NUM_FRAMES:
-            s = get_state(env.state())
-            s_cont = get_cont_state(env.continuous_state())  # Change
-            if not offline_dataset:
-                # Generate data
-                s_cont_prime, action, reward, is_terminated = world_dynamics(t, replay_start_size, num_actions, s_cont, env, policy_net)
+            # Generate data
+            s_prime, action, reward, is_terminated = world_dynamics(t, replay_start_size, num_actions, s, env, policy_net)
 
-                sample = None
-                if replay_off:
-                    sample = [transition(s_cont, s_cont_prime, action, reward, is_terminated)]
-                else:
-                    # Write the current frame to replay buffer
-                    r_buffer.add(s_cont, s_cont_prime, action, reward, is_terminated)
-
-                    # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
-                    if t > REPLAY_START_SIZE and len(r_buffer.buffer) >= BATCH_SIZE:
-                        # Sample a batch
-                        sample = r_buffer.sample(BATCH_SIZE)
-
-                # Train every n number of frames defined by TRAINING_FREQ
-                if t % TRAINING_FREQ == 0 and sample is not None:
-                    if target_off:
-                        # train(sample, policy_net, policy_net, optimizer)
-                        model_net_train(sample, obj_net, obj_net, obj_optimizer)
-                    else:
-                        policy_net_update_counter += 1
-                        train(sample, policy_net, target_net, optimizer)
-
-                # Update the target network only after some number of policy network updates
-                if not target_off and policy_net_update_counter > 0 and policy_net_update_counter % TARGET_NETWORK_UPDATE_FREQ == 0:
-                    target_net.load_state_dict(policy_net.state_dict())
-
+            sample = None
+            if replay_off:
+                sample = [transition(s, s_prime, action, reward, is_terminated)]
             else:
-                # Random play to obtain the data
-                s_cont_prime, action, reward, is_terminated = world_dynamics(t, replay_start_size, num_actions, s_cont, env, None)
+                # Write the current frame to replay buffer
+                r_buffer.add(s, s_prime, action, reward, is_terminated)
 
-                # Reshape the object states into 1d list
-                s_cont_prime_vector = s_cont_prime
-                s_cont_prime_vector = s_cont_prime_vector.cpu().numpy()
-                s_cont_vector = s_cont.cpu().numpy()
-                if len(s_cont_prime_vector) == 0:
-                    continue
+                # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
+                if t > REPLAY_START_SIZE and len(r_buffer.buffer) >= BATCH_SIZE:
+                    # Sample a batch
+                    sample = r_buffer.sample(BATCH_SIZE)
 
-                # One hot labeling the action
-                action_vector = np.zeros(action_len)
-                action_vector[action] = 1
-
-                # Aggregate inside a single vector
-                record = (s_cont_vector.tolist(), action_vector.tolist(), s_cont_prime_vector.tolist(), reward[0][0].item())
-
-                # Append to the dataset collection
-                frame_count += 1
-                if frame_count == 1:
-                    continue
+            # Train every n number of frames defined by TRAINING_FREQ
+            if t % TRAINING_FREQ == 0 and sample is not None:
+                if target_off:
+                    train(sample, policy_net, policy_net, optimizer)
                 else:
-                    dataset.append(record)
+                    policy_net_update_counter += 1
+                    train(sample, policy_net, target_net, optimizer)
+
+            # Update the target network only after some number of policy network updates
+            if not target_off and policy_net_update_counter > 0 and policy_net_update_counter % TARGET_NETWORK_UPDATE_FREQ == 0:
+                target_net.load_state_dict(policy_net.state_dict())
 
             G += reward.item()
 
             t += 1
 
             # Continue the process
-            s = s_cont_prime
+            s = s_prime
 
         # Increment the episodes
         e += 1
@@ -527,11 +395,6 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
                         'replay_buffer': r_buffer if not replay_off else []
             }, output_file_name + "_checkpoint")
 
-    # Store the collected dataset
-    filename = "dataset_" + "random_" + str(NUM_FRAMES) + ".json"
-    with open(filename, 'w') as json_file:
-        json.dump(dataset, json_file, indent=6)
-
     # Print final logging info
     logging.info("Avg return: " + str(numpy.around(avg_return, 2)) + " | Time per frame: " + str((time.time()-t_start)/t))
         
@@ -553,7 +416,6 @@ def main():
     parser.add_argument("--save", "-s", action="store_true")
     parser.add_argument("--replayoff", "-r", action="store_true")
     parser.add_argument("--targetoff", "-t", action="store_true")
-    parser.add_argument("--offlinedataset", "-d", action="store_true")
     args = parser.parse_args()
 
     if args.verbose:
@@ -570,15 +432,10 @@ def main():
     if args.loadfile:
         load_file_path = args.loadfile
 
-    env = Velenvironment(args.game)
+    env = Environment(args.game)
 
     print('Cuda available?: ' + str(torch.cuda.is_available()))
-    dqn(env, replay_off=args.replayoff,
-        target_off=args.targetoff,
-        output_file_name=file_name,
-        offline_dataset=args.offlinedataset,
-        store_intermediate_result=args.save,
-        load_path=load_file_path, step_size=args.alpha)
+    dqn(env, args.replayoff, args.targetoff, file_name, args.save, load_file_path, args.alpha)
 
 
 if __name__ == '__main__':

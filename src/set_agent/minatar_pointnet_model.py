@@ -25,7 +25,7 @@ def main():
 
 def train_pl():
     # Square linear
-    dataset = MinatarDataset(dataset_size=20000)
+    dataset = MinatarDataset()
     dim_dict = dataset.get_dims()
     env_len = dim_dict["action_len"]
     obj_in_len = dim_dict["obj_len"]
@@ -66,7 +66,7 @@ def train_pl():
         precision=16,
         max_epochs=4,
         # check_val_every_n_epoch=4,
-        accumulate_grad_batches=16,
+        accumulate_grad_batches=64,
         profiler="simple"
         # callbacks=[early_stop_callback]
     )
