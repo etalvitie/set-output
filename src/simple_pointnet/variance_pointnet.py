@@ -4,6 +4,7 @@ import os
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
+import pytorch_lightning as pl
 
 from datasets.SimpleNumberDataset import SimpleNumberDataset
 from datasets.squaredataclass import SquareDataset
@@ -11,8 +12,6 @@ from src.set_utils.simple_matcher import SimpleMatcher
 from src.set_utils.variance_matcher import VarianceMatcher
 
 torch.set_grad_enabled(True)
-
-import pytorch_lightning as pl
 
 """
 To run the logger, enter
@@ -64,6 +63,7 @@ class VariancePointNet(pl.LightningModule):
         )
 
         # Output heads
+
         self.linear_attri = nn.Sequential(
             nn.Linear(1152, 512),
             nn.ReLU(),
@@ -77,21 +77,38 @@ class VariancePointNet(pl.LightningModule):
             nn.Linear(128, obj_attri_len),
             # nn.Sigmoid()
         )
+        # self.linear_regs = []
+        # for i in range(4):
+        #     self.linear_regs.append(nn.Sequential(
+        #         nn.Linear(1152, 512),
+        #         nn.ReLU(),
+        #         self.dropout,
+        #         nn.Linear(512, 256),
+        #         nn.ReLU(),
+        #         self.dropout,
+        #         nn.Linear(256, 128),
+        #         nn.ReLU(),
+        #         self.dropout,
+        #         nn.Linear(128, 64),
+        #         nn.ReLU(),
+        #         self.dropout,
+        #         nn.Linear(64, 2 * obj_reg_len),
+        #     ))
         self.linear_reg = nn.Sequential(
-            nn.Linear(1152, 512),
-            nn.ReLU(),
-            self.dropout,
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            self.dropout,
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            self.dropout,
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            self.dropout,
-            nn.Linear(64, 2 * obj_reg_len),
-        )
+                nn.Linear(1152, 512),
+                nn.ReLU(),
+                self.dropout,
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                self.dropout,
+                nn.Linear(256, 128),
+                nn.ReLU(),
+                self.dropout,
+                nn.Linear(128, 64),
+                nn.ReLU(),
+                self.dropout,
+                nn.Linear(64, 2 * obj_reg_len),
+            )
         self.relu = nn.ReLU()
 
         # New objects generations
@@ -113,15 +130,15 @@ class VariancePointNet(pl.LightningModule):
 
     def forward(self, objs, env, debug=False):
         """
-        Input size: [BATCH_SIZE * (2M+1)]
+        Input size: [BATCH_SIZE, N, M]
         """
         # batch size
         bs = env.shape[0]
 
         # Calculate the object embedding
         # objs = x[:, self.env_len:None].reshape(bs, -1, self.obj_in_len)
-        objs = self.obj_embed(objs)                             # Shape: [BS, N, 64]
-        h_objs = self.obj_encoder(objs)
+        emb_objs = self.obj_embed(objs)                             # Shape: [BS, N, 64]
+        h_objs = self.obj_encoder(emb_objs)
         # print(h_objs.shape)                                   # Shape: [BS, N, HIDDEN_DIM]
 
         # Zero-padding the object embedding
@@ -160,7 +177,7 @@ class VariancePointNet(pl.LightningModule):
             print(h_objs)
 
         # Concat the three matrix
-        h = torch.cat((objs, h_set, h_env), dim=2)                # Shape: [BS, M, 3*HIDDEN_DIM]
+        h = torch.cat((emb_objs, h_set, h_env), dim=2)                # Shape: [BS, M, 3*HIDDEN_DIM]
         # h_global = torch.cat((h_env_vector, h_set_vector), dim=1)   # Shape: [BS, 2*HIDDEN_DIM]
 
         # LSTM version
@@ -170,8 +187,21 @@ class VariancePointNet(pl.LightningModule):
         # h = self.decoder(h)
 
         # Predict
+        # pred_reg_result = []
+        # for batch in range(bs):
+        #     batch_result = []
+        #     for i in range(in_set_size):
+        #         reg = self.linear_regs[i](h[batch,i,:])
+        #         batch_result.append(reg)
+        #
+        #     batch_result = torch.cat(batch_result, dim=1)
+        #     pred_reg_result.append(batch_result)
+        #
+        # pred_reg_result = self.cat(pred_reg_result, dim=0)
+
         pred_reg_result = self.linear_reg(h)
-        pred_reg = pred_reg_result[:, :, 0:self.obj_reg_len]
+        pred_reg_vel = pred_reg_result[:, :, 0:self.obj_reg_len]
+        pred_reg = objs[:, :, 0:self.obj_reg_len] + pred_reg_vel
         pred_reg_var = pred_reg_result[:, :, self.obj_reg_len:None]
         pred_reg_var = pred_reg_var**2 + 1e-6           # Prevent zero covariance causing errors
         pred_attri = self.linear_attri(h)

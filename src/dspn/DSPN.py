@@ -5,7 +5,8 @@ import scipy.optimize
 import torch.nn.functional as F
 import random
 import math
-import numpy as np 
+import numpy as np
+import pytorch_lightning as pl
 from torch.utils.data import Dataset
 import pandas as pd 
 import matplotlib
@@ -55,16 +56,22 @@ class deepsetnet(nn.Module):
 
 def hungarian_loss(output,target, set_dim_transpose):
 
-      with torch.enable_grad():
+    with torch.enable_grad():
+        if target.shape[1] == 0:
+            loss = torch.sum(output) * 0
+            return loss
+
         output = output.reshape(set_dim_transpose).transpose(0,1)
+        target = target[:, :]
         target = target.reshape(set_dim_transpose).transpose(0,1)
         target=target[torch.randperm(target.size()[0])]
         diff_mat  = torch.Tensor([[sum((i-j)**2) for i in output] for j in target])
         assignments = scipy.optimize.linear_sum_assignment(diff_mat.numpy())[1]
-        loss = 0 
-        for i in range(len(assignments)): 
+        loss = 0
+        for i in range(len(assignments)):
             loss += (target[i]-output[assignments[i]])**2
-      return sum(loss)
+
+    return sum(loss)
 
 def chamfer_loss(output, target, set_dim_transpose):  
     with torch.enable_grad():
@@ -80,28 +87,6 @@ def chamfer_loss(output, target, set_dim_transpose):
         min2 = diff_mat2.min(1)
     return sum(min2.values) + sum(min1.values)
 
-class settoset(nn.Module): 
-    '''
-    Parameters: encoder1: the set encoder
-    encoder2: the encoder that gets passed into the DSPN
-    latent_dim: the output dimension of encoder1 
-    set_dim: (number of objects, length of each object)
-    n_iters: n_iters parameter for DSPN 
-    masks: for DSPN, doesn't actually do anything 
-    '''
-    def __init__(self, encoder1, encoder2, latent_dim, set_dim, n_iters, masks = False ): 
-        super().__init__()
-        self.latent_dim = latent_dim
-        self.encoder = encoder1
-        self.decoder = deepsetnet(encoder2, latent_dim, set_dim, n_iters, masks)
-    def forward(self, x, action_vec = None): 
-        z = self.encoder(x)
-        z = z[0]
-        if action_vec is not None: 
-            
-            action_vec = torch.cat((action_vec, torch.Tensor([0 for i in range(self.latent_dim-action_vec.size()[0])])),0)
-            z = z +  action_vec                       
-      
-        out = self.decoder(z)
-        return out
+
+
         

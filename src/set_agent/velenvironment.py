@@ -1,4 +1,4 @@
-from minatar import environment
+from MinAtar.minatar import environment
 import numpy as np
 import scipy.optimize 
 import math

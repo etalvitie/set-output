@@ -30,7 +30,8 @@ import numpy as np
 from tqdm import tqdm
 
 from collections import namedtuple
-from MinAtar.minatar import Environment, Velenvironment
+from MinAtar.minatar import Environment
+from velenvironment import Velenvironment
 from src.simple_pointnet.variance_pointnet import VariancePointNet
 
 ################################################################################################################
@@ -41,7 +42,7 @@ BATCH_SIZE = 32
 REPLAY_BUFFER_SIZE = 100000
 TARGET_NETWORK_UPDATE_FREQ = 1000
 TRAINING_FREQ = 1
-NUM_FRAMES = 5000
+NUM_FRAMES = 20000
 FIRST_N_FRAMES = 100000
 REPLAY_START_SIZE = 5000
 END_EPSILON = 0.1

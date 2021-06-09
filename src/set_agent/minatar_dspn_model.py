@@ -4,6 +4,7 @@ Predicting Objects from Minatar dataset
 import random
 
 from src.simple_pointnet.variance_pointnet import VariancePointNet
+from src.dspn.SetDSPN import SetDSPN
 from datasets.MinatarDataset.MinatarDataset import MinatarDataset
 
 import glob
@@ -42,13 +43,15 @@ def train_pl():
     val_data_loader = DataLoader(val_set, batch_size=1, pin_memory=True)
 
     # Initialize the model
-    model = VariancePointNet(
-        env_len=env_len,
+    model = SetDSPN(
         obj_in_len=obj_in_len,
-        obj_reg_len=obj_reg_len,
-        obj_attri_len=obj_attri_len,
-        out_set_size=out_set_size,
-        hidden_dim=hidden_dim
+        obj_reg_len=2,
+        obj_attri_len=2,
+        env_len=env_len,
+        latent_dim=64,
+        out_set_size=1,
+        n_iters=10,
+        masks=False
     )
 
     # Early stop callback
@@ -86,44 +89,52 @@ def evaluate(model=None, path=None):
             print("Using checkpoint ", latest_ckpt)
             path = latest_ckpt
 
-        model = VariancePointNet.load_from_checkpoint(path)
-        model.freeze()
+        model = SetDSPN.load_from_checkpoint(path)
+        # model.freeze()
 
     # Evaluate
     dataset = MinatarDataset()
     eval_data_loader = DataLoader(dataset, batch_size=1)
-    for i in range(5):
+    for i in range(20):
+        print(i)
         batch_idx = random.randint(0, len(dataset))
         batch = dataset[batch_idx]
-        s, a, sprime, r = batch
+        s, a, sprime, sappear, r = batch
         pred = model(s.unsqueeze(0), a.unsqueeze(0))
-        visualize(pred, sprime, s)
+        visualize(pred, s, sprime, sappear)
 
 
-def visualize(pred, gt, s):
+def visualize(pred, s, gt_sprime, gt_sappear):
     # Extract the information
-    pred_mask = pred['pred_mask'][0]
-    pred_pos = pred['pred_reg'][0][:, 0:2]
-    pred_pos_var = pred['pred_reg_var'][0][:, 0:2]
+    pred_mask = pred['pred_mask'][0].detach()
+    pred_pos = pred['pred_reg'][0][:, 0:2].detach()
+    pred_pos_var = pred['pred_reg_var'][0][:, 0:2].detach()
     pred_pos_var = pred_pos_var[:, 0] + pred_pos_var[:, 1]
 
+    # Plot predictions
     pred_data = {
         "x": pred_pos[:, 0],
         "y": pred_pos[:, 1],
-        "var": pred_pos_var
+        "var": pred_pos_var,
+        "vis": pred_mask
     }
-    gt_data = {
-        "x": gt[:, 0],
-        "y": gt[:, 1]
-    }
-
-    # Plot
     sns.relplot(
         data=pred_data, x='x', y='y',
-        size='var', alpha=0.5, legend=False
+        size='var', alpha=0.5,
+        legend=False
     )
-    plt.plot(gt[:, 0], gt[:, 1], 'kx')
+
+    # Plot ground truth
+    if len(gt_sappear) != 0:
+        gt_data = {
+            "x": gt_sappear[:, 0],
+            "y": gt_sappear[:, 1]
+        }
+        plt.plot(gt_sappear[:, 0], gt_sappear[:, 1], 'rx')
+        print(gt_sappear)
+    plt.plot(gt_sprime[:, 0], gt_sprime[:, 1], 'kx')
     plt.plot(s[:, 0], s[:, 1], 'ko')
+
     plt.show()
 
 

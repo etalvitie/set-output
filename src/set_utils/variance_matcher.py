@@ -50,6 +50,9 @@ class VarianceMatcher(pl.LightningModule):
             # Find out how many objects in the ground truth label
             num_gt_queries = gt[batch_idx].shape[0]
 
+            # Regression data in ground truth labels
+            gt_reg = gt[batch_idx][:, 0:len_reg]
+
             # Calculate the cost matrix
             cost = torch.zeros((num_queries, num_gt_queries), device=self.device)
 
@@ -66,7 +69,7 @@ class VarianceMatcher(pl.LightningModule):
                 # cost = torch.log(cost)          # Convert into log
                 cost = -cost
             else:
-                cost = torch.cdist(pred_reg[batch_idx], gt[batch_idx])
+                cost = torch.cdist(pred_reg[batch_idx], gt_reg)
                 # print(cost)
 
             # Convert to Numpy array to make scipy happy
@@ -81,6 +84,7 @@ class VarianceMatcher(pl.LightningModule):
             # Reorder the labels
             gt_order = indices[1]
             gt_reordered = gt[batch_idx][gt_order]
+            gt_reg_reordered = gt_reg[gt_order]
 
             # Reorder the predictions
             pred_order = indices[0]
@@ -89,7 +93,7 @@ class VarianceMatcher(pl.LightningModule):
             pred_var_reordered = pred_reg_var[batch_idx][pred_order]
 
             # Calculate the difference between the prediction and the ground truth label
-            pred_diff = pred_reordered - gt_reordered
+            pred_diff = pred_reordered - gt_reg_reordered
 
             # Calculate the target mask corresponding to the selected outputs
             tgt_mask = torch.zeros(num_queries, device=self.device, dtype=torch.long)
@@ -102,6 +106,16 @@ class VarianceMatcher(pl.LightningModule):
                 unmatched_mask = tgt_mask != 1
                 pred_unmatched = pred_reg[batch_idx][unmatched_mask]
 
+            # Find the appearing objects
+            gt_mask = torch.zeros(num_gt_queries, device=self.device, dtype=torch.long)
+            gt_mask[gt_order] = 1
+            if (gt_mask == 1).all():
+                gt_unmatched = torch.Tensor()
+            else:
+                unmatched_mask = gt_mask != 1
+                gt_unmatched = gt[batch_idx][unmatched_mask]
+
+
             # return as a dictionary
             match_result = {
                 "pred_order": pred_order,
@@ -109,10 +123,11 @@ class VarianceMatcher(pl.LightningModule):
                 "pred_reordered": pred_reordered,
                 "pred_var_reordered": pred_var_reordered,
                 "gt_reordered": gt_reordered,
-                "pred_diff": pred_diff,
                 "tgt_mask": tgt_mask,
-                "pred_unmatched": pred_unmatched
+                "pred_unmatched": pred_unmatched,
+                "gt_unmatched": gt_unmatched
             }
+
             # print("Pred_before:")
             # print(pred_reg[batch_idx])
             # print("Gt_before:")
