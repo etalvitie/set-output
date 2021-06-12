@@ -36,7 +36,8 @@ class SetDSPN(pl.LightningModule):
                  out_set_size=5,
                  n_iters=10,
                  internal_lr=0.5,
-                 overall_lr=1e-3):
+                 overall_lr=1e-3,
+                 loss_encoder_weight=0.1):
         super().__init__()
         self.save_hyperparameters()
 
@@ -75,7 +76,7 @@ class SetDSPN(pl.LightningModule):
 
         self.loss_reg_weight = 1
         self.loss_mask_weight = 1
-        self.loss_encoder_weight = 1
+        self.loss_encoder_weight = loss_encoder_weight
 
     def forward(self, x, a=None):
         # z = self.encoder(x)

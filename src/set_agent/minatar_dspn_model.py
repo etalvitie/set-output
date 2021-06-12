@@ -51,7 +51,8 @@ def train_pl():
         out_set_size=2,
         n_iters=10,
         internal_lr=0.5,
-        overall_lr=1e-3
+        overall_lr=5e-3,
+        loss_encoder_weight=0.1
     )
 
     # Early stop callback
