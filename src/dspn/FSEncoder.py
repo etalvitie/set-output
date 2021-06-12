@@ -1,4 +1,4 @@
-from src.dspn.DSPN import hungarian_loss
+from src.dspn.DSPN_copy import hungarian_loss
 import scipy.optimize
 import torch
 import torch.nn as nn
@@ -16,30 +16,21 @@ import pytorch_lightning as pl
 
 class FSEncoder(pl.LightningModule):
     ##Set encoder from the DSPN/FSencoder papers
-    def __init__(self, input_channels, output_channels, dim,set_dim, mask = False):
+    def __init__(self, input_channels, output_channels, dim):
         super().__init__()
-        self.set_dim = set_dim
-        n_out = 30
-        if mask == True:
-            self.mask = 1
-        else:
-            self.mask = 0
         self.conv = nn.Sequential(
-            nn.Conv1d(input_channels + self.mask, dim, 1),
-           ## nn.ReLU(),
-           ## nn.Conv1d(dim, dim, 1),
+            nn.Conv1d(input_channels + 1, dim, 1),
+            nn.ReLU(),
+            nn.Conv1d(dim, dim, 1),
             nn.ReLU(),
             nn.Conv1d(dim, output_channels, 1),
         )
-        self.pool = FSPool(output_channels, n_out, relaxed=False)
+        self.pool = FSPool(output_channels, 20, relaxed=False)
 
     def forward(self, x, mask=None):
-        ##mask = mask.unsqueeze(1)
-        ##x = torch.cat([x, mask], dim=1)  # include mask as part of set
-        h = x.reshape((self.set_dim[1],-1)).unsqueeze(2).permute(2,0,1)
-
-        h = self.conv(h)
-
-        h = h / h.size(2)  # normalise so that activations aren't too high with big sets
-        h, _ = self.pool(h)
-        return h
+        mask = mask.unsqueeze(1)
+        x = torch.cat([x, mask], dim=1)  # include mask as part of set
+        x = self.conv(x)
+        x = x / x.size(2)  # normalise so that activations aren't too high with big sets
+        x, _ = self.pool(x)
+        return x

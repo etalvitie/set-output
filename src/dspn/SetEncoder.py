@@ -1,4 +1,4 @@
-from src.dspn.DSPN import hungarian_loss
+from src.dspn.DSPN_copy import hungarian_loss
 from src.dspn.FSPool import FSPool
 
 import scipy.optimize
@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 import pytorch_lightning as pl
 
 class SetEncoder(pl.LightningModule):
-    def __init__(self, env_len=6, obj_in_len=9, env_hidden_dim=64, obj_hidden_dim=1024):
+    def __init__(self, env_len=6, obj_in_len=9, env_hidden_dim=64, obj_hidden_dim=512):
         super().__init__()
         self.save_hyperparameters()
 
@@ -49,7 +49,8 @@ class SetEncoder(pl.LightningModule):
 
         self.encoder = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim)
         )
 
     def forward(self, objs, env=None):

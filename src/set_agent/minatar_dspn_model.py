@@ -12,16 +12,15 @@ import os
 
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import Dataset, DataLoader
-torch.set_grad_enabled(True)
+from torch.utils.data import Dataset, DataLoader, RandomSampler
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style("whitegrid")
 
 def main():
-    # train_pl()
-    evaluate()
+    train_pl()
+    # evaluate()
 
 
 def train_pl():
@@ -49,7 +48,7 @@ def train_pl():
         obj_attri_len=2,
         env_len=env_len,
         latent_dim=64,
-        out_set_size=1,
+        out_set_size=2,
         n_iters=10,
         masks=False
     )
@@ -62,6 +61,21 @@ def train_pl():
     #     verbose=False,
     #     mode='min'
     # )
+
+    # Native train
+    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    # for i, batch in enumerate(train_data_loader):
+    #     print(i)
+    #     s, a, sprime, sappear, r = batch
+    #     s, a, sappear = s.to(model.device), a.to(model.device), sappear.to(model.device)
+    #     pred = model(s, a)
+    #     losses = model.loss_fn(pred, sappear)
+    #
+    #     optimizer.zero_grad()
+    #     losses['loss_encoder'].backward()
+    #     optimizer.step()
+    #     pass
+
 
     # Train
     trainer = pl.Trainer(

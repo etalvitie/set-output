@@ -24,17 +24,6 @@ class MinatarDataset(Dataset):
             files = glob.glob("*.json")
             name = files[0]
 
-        with open(name) as f:
-            data_mat = json.load(f)
-            self.data = data_mat
-
-        # Retrieve the vector division information
-        template = data_mat[0]
-        s, a, sprime, r = template
-        self.action_len = len(a)
-        self.obj_len = len(s[0][0])
-        self.num_types = self.obj_len - 5
-
         # Find if there is matched dataset
         file_matched = name.split(".")[0] + "_matched" + ".json"
         if os.path.isfile(file_matched):
@@ -42,8 +31,27 @@ class MinatarDataset(Dataset):
             with open(file_matched) as f:
                 data_matched = json.load(f)
                 self.data_matched = data_matched
+
+            template = self.data_matched[0]
+            s, a, sprime, sappear, r = template
+            self.action_len = len(a)
+            self.obj_len = len(s[0])
+            self.num_types = self.obj_len - 5
+
         else:
             print("Matched dataset not found. Matching...")
+            with open(name) as f:
+                data_mat = json.load(f)
+                self.data = data_mat
+
+            # Retrieve the vector division information
+            template = data_mat[0]
+            s, a, sprime, r = template
+            self.action_len = len(a)
+            self.obj_len = len(s[0][0])
+            self.num_types = self.obj_len - 5
+
+            # Perform matching
             self.data_matched = []
             self.matching()
             with open(file_matched, 'w') as json_file:
@@ -51,7 +59,7 @@ class MinatarDataset(Dataset):
 
         # Print out
         print("Dataset " + name + " loaded.")
-        print("Dataset Size: ", len(data_mat))
+        print("Dataset Size: ", len(self.data_matched))
         print("Action Vector Length: ", self.action_len)
         print("Object Vector Length: ", self.obj_len)
 

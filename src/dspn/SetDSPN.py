@@ -1,5 +1,6 @@
 from src.dspn.FSEncoder import FSEncoder
-from src.dspn.DSPN import deepsetnet, hungarian_loss
+from src.dspn.DSPN_copy import deepsetnet, hungarian_loss
+from src.dspn.DSPN import DSPN
 from src.dspn.SetEncoder import SetEncoder
 from src.set_utils.variance_matcher import VarianceMatcher
 
@@ -33,8 +34,8 @@ class SetDSPN(pl.LightningModule):
         self.obj_reg_len = obj_reg_len
         self.obj_attri_len = obj_attri_len
 
-        obj_out_len =  obj_reg_len*2 + obj_attri_len*2
-        out_set_dim = (out_set_size, obj_out_len)
+        out_obj_len =  obj_reg_len*2 + obj_attri_len*2
+        out_set_dim = (out_set_size, out_obj_len)
         self.out_set_dim = out_set_dim
 
         if set_encoder is None:
@@ -42,9 +43,11 @@ class SetDSPN(pl.LightningModule):
         self.set_encoder = set_encoder
 
         if dspn_encoder is None:
-            # dspn_encoder = FSEncoder(out_obj_len, 1088, 1088, out_set_dim)
-            dspn_encoder = SetEncoder(env_len=0, obj_in_len=obj_out_len, obj_hidden_dim=1088)
-        self.decoder = deepsetnet(dspn_encoder, latent_dim, out_set_dim, n_iters, masks)
+            dspn_encoder = FSEncoder(out_obj_len, 576, dim=512)
+            # dspn_encoder = SetEncoder(env_len=0, obj_in_len=obj_out_len, obj_hidden_dim=1088)
+        self.dspn_encoder = dspn_encoder
+        # self.decoder = deepsetnet(dspn_encoder, latent_dim, out_set_dim, n_iters, masks)
+        self.decoder = DSPN(dspn_encoder, out_obj_len, out_set_size, 10, 0.1)
 
         # Output masks
         self.mask_softmax = nn.Softmax(dim=2)
@@ -53,10 +56,12 @@ class SetDSPN(pl.LightningModule):
         # Loss + matching calculation
         self.matcher = VarianceMatcher()
         self.loss_reg_criterion = nn.MSELoss()
-        self.loss_mask_criterion = nn.CrossEntropyLoss()
+        self.loss_mask_criterion = nn.MSELoss()
+        self.loss_encoder_criterion = nn.MSELoss()
 
         self.loss_reg_weight = 1
         self.loss_mask_weight = 1
+        self.loss_encoder_weight = 1
 
     def forward(self, x, a=None):
         # z = self.encoder(x)
@@ -67,36 +72,55 @@ class SetDSPN(pl.LightningModule):
         #     z = z + action_vec
         h = self.set_encoder(x, a)
 
-        pred = self.decoder(h)
-        pred = pred.reshape(self.out_set_dim)
-        pred = pred.unsqueeze(0)
+        intermediate_sets, intermediate_masks, repr_losses, grad_norms = self.decoder(h)
+        # pred = pred.reshape(self.out_set_dim)
+        # pred = pred.unsqueeze(0)
 
         # Regressions
-        pred_reg = pred[:, :, 0:self.obj_reg_len]
-        pred_reg_var = pred[:, :, self.obj_reg_len:2*self.obj_reg_len]
-        pred_reg_var = pred_reg_var ** 2 + 1e-6
+        # pred_reg = pred[:, :, 0:self.obj_reg_len]
+        # pred_reg_var = pred[:, :, self.obj_reg_len:2*self.obj_reg_len]
+        # pred_reg_var = pred_reg_var ** 2 + 1e-6
 
         # Attributes
+        # pred_attri = pred[:, :, 2*self.obj_reg_len:None]
+        # pred_mask = pred_attri[:, :, 0:2]
+        # pred_mask = self.mask_softmax(pred_mask)
+
+        pred = intermediate_sets[-1].permute(0, 2, 1)
+        pred_reg = pred[:, :, 0:self.obj_reg_len]
+        pred_reg_var = pred[:, :, self.obj_reg_len:2*self.obj_reg_len]
         pred_attri = pred[:, :, 2*self.obj_reg_len:None]
-        pred_mask = pred_attri[:, :, 0:2]
-        pred_mask = self.mask_softmax(pred_mask)
+        pred_mask = intermediate_masks[-1]
 
         return {'pred_attri': pred_attri,
                 'pred_mask': pred_mask,
                 'pred_reg': pred_reg,
+                'scene_vector': h,
                 'pred_reg_var': pred_reg_var}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         return optimizer
 
     def loss_fn(self, pred, gt_label):
+        # Putting into a dictionary
+        zero_loss = torch.zeros(1, device=self.device)
+        losses = {
+            'loss': zero_loss,
+            'loss_reg': zero_loss,
+            'loss_reg_var': zero_loss,
+            'loss_mask': zero_loss,
+            'loss_encoder': zero_loss
+        }
+
         # If the output set is empty
         if gt_label.shape[1] == 0:
             pred_mask = pred['pred_mask'][0]
             tgt_mask = torch.zeros(pred_mask.shape[0], device=self.device, dtype=torch.long)
             loss_mask = self.loss_mask_criterion(pred_mask, tgt_mask)
-            return loss_mask, 0, 0, loss_mask
+            losses['loss'] = loss_mask
+            losses['loss_mask'] = loss_mask
+
         # Perform the matching
         else:
             gt_label = gt_label[:, :, 0:2]
@@ -134,12 +158,29 @@ class SetDSPN(pl.LightningModule):
                 tgt_mask = match_result['tgt_mask']
                 # print("Pred mask", pred_mask.shape)
                 # print("Tgt mask", tgt_mask.shape)
-                loss_mask = self.loss_mask_criterion(pred_mask, tgt_mask)
+                loss_mask += self.loss_mask_criterion(pred_mask, tgt_mask)
+
+            # Loss for the encoder
+            gt_scene, gt_mask = self._cvt_to_scene_vect(gt_label)
+            gt_new_set_vector = self.dspn_encoder(gt_scene, gt_mask)
+            scene_vector = pred['scene_vector']
+            loss_encoder = self.loss_encoder_criterion(gt_new_set_vector, scene_vector)
 
             # summing all the losses
-            loss = (loss_reg + loss_reg_var) * self.loss_reg_weight + loss_mask * self.loss_mask_weight
+            loss = (loss_reg + loss_reg_var) * self.loss_reg_weight +\
+                   loss_mask * self.loss_mask_weight +\
+                   loss_encoder * self.loss_encoder_weight
 
-            return loss, loss_reg, loss_reg_var, loss_mask
+            # Putting into a dictionary
+            losses = {
+                'loss': loss,
+                'loss_reg': loss_reg,
+                'loss_reg_var': loss_reg_var,
+                'loss_mask': loss_mask,
+                'loss_encoder': loss_encoder
+            }
+
+        return losses
 
     def training_step(self, train_batch, batch_idx):
         # Calculate the prediction
@@ -147,14 +188,15 @@ class SetDSPN(pl.LightningModule):
         pred = self.forward(s, a)
 
         # Calculate the loss
-        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, sappear)
+        losses = self.loss_fn(pred, sappear)
 
-        self.log('train_loss', loss)
-        self.log('train_reg_loss', loss_reg)
-        self.log('train_reg_var_loss', loss_reg_var)
-        self.log('train_mask_loss', loss_mask)
+        self.log('train_loss', losses['loss'])
+        self.log('train_reg_loss', losses['loss_reg'])
+        self.log('train_reg_var_loss', losses['loss_reg_var'])
+        self.log('train_mask_loss', losses['loss_mask'])
+        self.log('train_encoder_loss', losses['loss_encoder'])
 
-        return loss
+        return losses['loss']
 
     def validation_step(self, val_batch, batch_idx):
         # Calculate the prediction
@@ -162,9 +204,28 @@ class SetDSPN(pl.LightningModule):
         pred = self.forward(s, a)
 
         # Calculate the loss
-        loss, loss_reg, loss_reg_var, loss_mask = self.loss_fn(pred, sappear)
+        losses = self.loss_fn(pred, sappear)
 
-        self.log('val_loss', loss)
-        self.log('val_reg_loss', loss_reg)
-        self.log('val_reg_var_loss', loss_reg_var)
-        self.log('val_mask_loss', loss_mask)
+        self.log('val_loss', losses['loss'])
+        self.log('val_reg_loss', losses['loss_reg'])
+        self.log('val_reg_var_loss', losses['loss_reg_var'])
+        self.log('val_mask_loss', losses['loss_mask'])
+        self.log('val_encoder_loss', losses['loss_encoder'])
+
+    def _cvt_to_scene_vect(self, gt_label):
+        bs, num_obj, reg_len = gt_label.shape
+
+        # Transpose
+        gt_label = gt_label.permute(0, 2, 1)
+
+        # Paddings
+        zero_var_pad = torch.zeros([bs, reg_len, num_obj], device=self.device, dtype=torch.float) + 1e-6
+        attri_pad = torch.zeros([bs, 2*self.obj_attri_len, num_obj], device=self.device, dtype=torch.float)
+
+        # Concatenate back
+        gt_label = torch.cat([gt_label, zero_var_pad, attri_pad], dim=1)
+
+        # Also generate a mask
+        gt_mask = torch.ones([bs, num_obj], device=self.device, dtype=torch.float)
+
+        return gt_label, gt_mask

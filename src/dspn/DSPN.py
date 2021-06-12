@@ -1,92 +1,100 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import scipy.optimize
 import torch.nn.functional as F
-import random
-import math
-import numpy as np
-import pytorch_lightning as pl
-from torch.utils.data import Dataset
-import pandas as pd 
-import matplotlib
-from matplotlib import pyplot as plt
 
-class deepsetnet(nn.Module): 
-    '''
-    Initialize the deepsetnet. 
-    Parameters: 
-    Encoder: the encoder network to be used 
-    latent_dim: the dimension of the encoder output
-    set_dim: a tuple of (number of elements, length of elements), for square data is (4,2)
-    n_iters: number of gradient descent iterations for the forward pass 
-    masks: True if we are using variable size sets with masks 
-    '''
-    def __init__(self, encoder, latent_dim, set_dim, n_iters, masks = False):
-        ## Becuase of how the data turned out, set dim needs to be the transpose of the real set dim
+
+class DSPN(nn.Module):
+    """ Deep Set Prediction Networks
+    Yan Zhang, Jonathon Hare, Adam Prügel-Bennett
+    NeurIPS 2019
+    https://arxiv.org/abs/1906.06565
+    """
+
+    def __init__(self, encoder, set_channels, max_set_size, iters, lr):
+        """
+        encoder: Set encoder module that takes a set as input and returns a representation thereof.
+            It should have a forward function that takes two arguments:
+            - a set: FloatTensor of size (batch_size, input_channels, maximum_set_size). Each set
+            should be padded to the same maximum size with 0s, even across batches.
+            - a mask: FloatTensor of size (batch_size, maximum_set_size). This should take the value 1
+            if the corresponding element is present and 0 if not.
+        channels: Number of channels of the set to predict.
+        max_set_size: Maximum size of the set.
+        iter: Number of iterations to run the DSPN algorithm for.
+        lr: Learning rate of inner gradient descent in DSPN.
+        """
         super().__init__()
-        self.masks = masks
-        self.encoder = encoder.requires_grad_(True)
-        self.set_dim = set_dim 
-        self.latent_dim = latent_dim 
-        self.n_iters = n_iters
-        self.learn_rate = 1
-        self.length = 1
-        for i in set_dim: 
-            self.length = self.length*i
-        self.Y0 = nn.Parameter(torch.randn(self.length)/10, requires_grad = True)
-    def forward(self, x): 
-        input1 = self.Y0
-        loss_func = nn.MSELoss(reduction = 'sum')
-        with torch.enable_grad(): 
-            ##gradient descent loop for the forward pass 
-            for i in range(self.n_iters): 
-                
-                output = self.encoder(input1)
-                loss = loss_func(output, x)  
-                
-                output_grad = torch.autograd.grad(inputs = input1 ,outputs = loss,only_inputs=True,
-                    create_graph=True,)
-              
-                
-                input1 = input1 - self.learn_rate*output_grad[0]
-        y = input1
-        
-        return y 
+        self.encoder = encoder
+        self.iters = iters
+        self.lr = lr
 
-def hungarian_loss(output,target, set_dim_transpose):
+        self.starting_set = nn.Parameter(torch.rand(1, set_channels, max_set_size))
+        self.starting_mask = nn.Parameter(0.5 * torch.ones(1, max_set_size))
 
-    with torch.enable_grad():
-        if target.shape[1] == 0:
-            loss = torch.sum(output) * 0
-            return loss
+    def forward(self, target_repr):
+        """
+        Conceptually, DSPN simply turns the target_repr feature vector into a set.
+        target_repr: Representation that the predicted set should match. FloatTensor of size (batch_size, repr_channels).
+        Note that repr_channels can be different from self.channels.
+        This can come from a set processed with the same encoder as self.encoder (auto-encoder), or a different
+        input completely (normal supervised learning), such as an image encoded into a feature vector.
+        """
+        # copy same initial set over batch
+        current_set = self.starting_set.expand(
+            target_repr.size(0), *self.starting_set.size()[1:]
+        )
+        current_mask = self.starting_mask.expand(
+            target_repr.size(0), self.starting_mask.size()[1]
+        )
+        # make sure mask is valid
+        current_mask = current_mask.clamp(min=0, max=1)
 
-        output = output.reshape(set_dim_transpose).transpose(0,1)
-        target = target[:, :]
-        target = target.reshape(set_dim_transpose).transpose(0,1)
-        target=target[torch.randperm(target.size()[0])]
-        diff_mat  = torch.Tensor([[sum((i-j)**2) for i in output] for j in target])
-        assignments = scipy.optimize.linear_sum_assignment(diff_mat.numpy())[1]
-        loss = 0
-        for i in range(len(assignments)):
-            loss += (target[i]-output[assignments[i]])**2
+        # info used for loss computation
+        intermediate_sets = [current_set]
+        intermediate_masks = [current_mask]
+        # info used for debugging
+        repr_losses = []
+        grad_norms = []
 
-    return sum(loss)
+        # optimise repr_loss for fixed number of steps
+        for i in range(self.iters):
+            # regardless of grad setting in train or eval, each iteration requires torch.autograd.grad to be used
+            with torch.enable_grad():
+                if not self.training:
+                    current_set.requires_grad = True
+                    current_mask.requires_grad = True
 
-def chamfer_loss(output, target, set_dim_transpose):  
-    with torch.enable_grad():
-        output = output.reshape(set_dim_transpose).transpose(0,1)
-        target = target.reshape(set_dim_transpose).transpose(0,1)
-        diff_mat  = [[sum((i-j)**2) for i in output] for j in target]
-        diff_mat2 = [0 for i in range(len(diff_mat))]
-        for i in range(len(diff_mat)): 
-            diff_mat2[i] = torch.stack(diff_mat[i])
-        diff_mat2 = torch.stack(diff_mat2,dim = 1)
-        
-        min1 = diff_mat2.min(0)
-        min2 = diff_mat2.min(1)
-    return sum(min2.values) + sum(min1.values)
+                # compute representation of current set
+                predicted_repr = self.encoder(current_set, current_mask)
+                # how well does the representation matches the target
+                repr_loss = F.smooth_l1_loss(
+                    predicted_repr, target_repr, reduction="mean"
+                )
+                # change to make to set and masks to improve the representation
+                set_grad, mask_grad = torch.autograd.grad(
+                    inputs=[current_set, current_mask],
+                    outputs=repr_loss,
+                    only_inputs=True,
+                    create_graph=True,
+                )
 
+            # update set with gradient descent
+            current_set = current_set - self.lr * set_grad
+            current_mask = current_mask - self.lr * mask_grad
+            current_mask = current_mask.clamp(min=0, max=1).to(torch.float)
 
+            # save some memory in eval mode
+            # if not self.training:
+            #     current_set = current_set.detach()
+            #     current_mask = current_mask.detach()
+            #     repr_loss = repr_loss.detach()
+            #     set_grad = set_grad.detach()
+            #     mask_grad = mask_grad.detach()
 
-        
+            # keep track of intermediates
+            intermediate_sets.append(current_set)
+            intermediate_masks.append(current_mask)
+            repr_losses.append(repr_loss)
+            grad_norms.append(set_grad.norm())
+
+        return intermediate_sets, intermediate_masks, repr_losses, grad_norms

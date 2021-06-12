@@ -17,7 +17,6 @@ class VarianceMatcher(pl.LightningModule):
         self.cost_reg = cost_reg
         self.cost_attri = cost_attri
 
-    @torch.no_grad()
     def forward(self, pred, gt, VERBOSE=False):
         """ Performs the matching
         Params:
@@ -54,29 +53,30 @@ class VarianceMatcher(pl.LightningModule):
             gt_reg = gt[batch_idx][:, 0:len_reg]
 
             # Calculate the cost matrix
-            cost = torch.zeros((num_queries, num_gt_queries), device=self.device)
+            with torch.set_grad_enabled(False):
+                cost = torch.zeros((num_queries, num_gt_queries), device=self.device)
 
-            mode = None
-            if mode == "EM":
-                for i in range(num_queries):
-                    mean = pred_reg[batch_idx][i]
-                    covar = pred_reg_var[batch_idx][i]
-                    x = gt[batch_idx]
-                    # print(mean, covar)
-                    cost_ = normal_log_prob(mean, covar, x)
-                    assert not torch.isnan(cost_[0])
-                    cost[i,:] = cost_
-                # cost = torch.log(cost)          # Convert into log
-                cost = -cost
-            else:
-                cost = torch.cdist(pred_reg[batch_idx], gt_reg)
-                # print(cost)
+                mode = None
+                if mode == "EM":
+                    for i in range(num_queries):
+                        mean = pred_reg[batch_idx][i]
+                        covar = pred_reg_var[batch_idx][i]
+                        x = gt[batch_idx]
+                        # print(mean, covar)
+                        cost_ = normal_log_prob(mean, covar, x)
+                        assert not torch.isnan(cost_[0])
+                        cost[i,:] = cost_
+                    # cost = torch.log(cost)          # Convert into log
+                    cost = -cost
+                else:
+                    cost = torch.cdist(pred_reg[batch_idx], gt_reg)
+                    # print(cost)
 
-            # Convert to Numpy array to make scipy happy
-            C = cost
-            if len(cost.shape)== 3:
-                C = C.squeeze()
-            C = C.cpu().numpy()
+                # Convert to Numpy array to make scipy happy
+                C = cost
+                if len(cost.shape)== 3:
+                    C = C.squeeze()
+                C = C.cpu().numpy()
 
             # Build the index mapping which leads the maximum probability
             indices = linear_sum_assignment(C)
@@ -96,7 +96,7 @@ class VarianceMatcher(pl.LightningModule):
             pred_diff = pred_reordered - gt_reg_reordered
 
             # Calculate the target mask corresponding to the selected outputs
-            tgt_mask = torch.zeros(num_queries, device=self.device, dtype=torch.long)
+            tgt_mask = torch.zeros(num_queries, device=self.device, dtype=torch.float)
             tgt_mask[pred_order] = 1
 
             # Find the disappearing objects
