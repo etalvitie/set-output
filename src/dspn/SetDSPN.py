@@ -25,7 +25,18 @@ class SetDSPN(pl.LightningModule):
     masks: for DSPN, doesn't actually do anything
     '''
 
-    def __init__(self, set_encoder=None, dspn_encoder=None, obj_in_len=9, obj_reg_len=2, obj_attri_len=2, env_len=6, latent_dim=64, out_set_size=5, n_iters=10, masks=False):
+    def __init__(self,
+                 set_encoder=None,
+                 dspn_encoder=None,
+                 obj_in_len=9,
+                 obj_reg_len=2,
+                 obj_attri_len=2,
+                 env_len=6,
+                 latent_dim=64,
+                 out_set_size=5,
+                 n_iters=10,
+                 internal_lr=0.5,
+                 overall_lr=1e-3):
         super().__init__()
         self.save_hyperparameters()
 
@@ -33,6 +44,9 @@ class SetDSPN(pl.LightningModule):
         self.obj_in_len = obj_in_len
         self.obj_reg_len = obj_reg_len
         self.obj_attri_len = obj_attri_len
+        self.n_iters = n_iters
+        self.internal_lr = internal_lr
+        self.learning_rate = overall_lr
 
         out_obj_len =  obj_reg_len*2 + obj_attri_len*2
         out_set_dim = (out_set_size, out_obj_len)
@@ -47,7 +61,7 @@ class SetDSPN(pl.LightningModule):
             # dspn_encoder = SetEncoder(env_len=0, obj_in_len=obj_out_len, obj_hidden_dim=1088)
         self.dspn_encoder = dspn_encoder
         # self.decoder = deepsetnet(dspn_encoder, latent_dim, out_set_dim, n_iters, masks)
-        self.decoder = DSPN(dspn_encoder, out_obj_len, out_set_size, 10, 0.1)
+        self.decoder = DSPN(dspn_encoder, out_obj_len, out_set_size, n_iters, internal_lr)
 
         # Output masks
         self.mask_softmax = nn.Softmax(dim=2)
@@ -99,7 +113,7 @@ class SetDSPN(pl.LightningModule):
                 'pred_reg_var': pred_reg_var}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
 
     def loss_fn(self, pred, gt_label):

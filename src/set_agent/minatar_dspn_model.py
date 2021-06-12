@@ -50,7 +50,8 @@ def train_pl():
         latent_dim=64,
         out_set_size=2,
         n_iters=10,
-        masks=False
+        internal_lr=0.5,
+        overall_lr=1e-3
     )
 
     # Early stop callback
@@ -84,7 +85,8 @@ def train_pl():
         max_epochs=12,
         # check_val_every_n_epoch=4,
         accumulate_grad_batches=64,
-        profiler="simple"
+        profiler="simple",
+        auto_lr_find=True,
         # callbacks=[early_stop_callback]
     )
     trainer.fit(model, train_data_loader, val_data_loader)
