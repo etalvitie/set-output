@@ -48,11 +48,11 @@ def train_pl():
         obj_attri_len=2,
         env_len=env_len,
         latent_dim=64,
-        out_set_size=2,
+        out_set_size=5,
         n_iters=10,
-        internal_lr=0.5,
-        overall_lr=5e-3,
-        loss_encoder_weight=0.1
+        internal_lr=1,
+        overall_lr=1e-3,
+        loss_encoder_weight=1
     )
 
     # Early stop callback

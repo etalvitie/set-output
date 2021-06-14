@@ -131,7 +131,7 @@ class SetDSPN(pl.LightningModule):
         # If the output set is empty
         if gt_label.shape[1] == 0:
             pred_mask = pred['pred_mask'][0]
-            tgt_mask = torch.zeros(pred_mask.shape[0], device=self.device, dtype=torch.long)
+            tgt_mask = torch.zeros(pred_mask.shape[0], device=self.device, dtype=torch.float)
             loss_mask = self.loss_mask_criterion(pred_mask, tgt_mask)
             losses['loss'] = loss_mask
             losses['loss_mask'] = loss_mask
