@@ -112,18 +112,23 @@ def evaluate(model=None, path=None):
     # Evaluate
     dataset = MinatarDataset()
     eval_data_loader = DataLoader(dataset, batch_size=1)
-    for i in range(20):
-        print(i)
+
+    counter = 0
+    while counter < 20:
         batch_idx = random.randint(0, len(dataset))
         batch = dataset[batch_idx]
         s, a, sprime, sappear, r = batch
+        if len(sappear) == 0:
+            continue
+
         pred = model(s.unsqueeze(0), a.unsqueeze(0))
         visualize(pred, s, sprime, sappear)
+        counter += 1
 
 
 def visualize(pred, s, gt_sprime, gt_sappear):
     # Extract the information
-    pred_mask = pred['pred_mask'][0].detach()
+    pred_mask = pred['pred_mask'][0].detach() > 0.5
     pred_pos = pred['pred_reg'][0][:, 0:2].detach()
     pred_pos_var = pred['pred_reg_var'][0][:, 0:2].detach()
     pred_pos_var = pred_pos_var[:, 0] + pred_pos_var[:, 1]
@@ -137,7 +142,7 @@ def visualize(pred, s, gt_sprime, gt_sappear):
     }
     sns.relplot(
         data=pred_data, x='x', y='y',
-        size='var', alpha=0.5,
+        size='var', alpha=0.5, style='vis',
         legend=False
     )
 
