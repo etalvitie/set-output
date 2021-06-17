@@ -127,6 +127,12 @@ def evaluate(model=None, path=None):
 
 
 def visualize(pred, s, gt_sprime, gt_sappear):
+    """ 
+        pred -> dictionary from model output
+        s -> set input of current state
+        gt_sprime -> ground truth set output of existing object
+        gt_sappear -> variable size set output of new object
+    """
     # Extract the information
     pred_mask = pred['pred_mask'][0].detach() > 0.5
     pred_pos = pred['pred_reg'][0][:, 0:2].detach()
