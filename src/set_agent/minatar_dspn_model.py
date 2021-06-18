@@ -19,13 +19,13 @@ import seaborn as sns
 sns.set_style("whitegrid")
 
 def main():
-    train_pl()
-    # evaluate()
+    # train_pl()
+    evaluate()
 
 
 def train_pl():
     # Square linear
-    dataset = MinatarDataset()
+    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
     dim_dict = dataset.get_dims()
     env_len = dim_dict["action_len"]
     obj_in_len = dim_dict["obj_len"]
@@ -50,7 +50,7 @@ def train_pl():
         latent_dim=64,
         out_set_size=5,
         n_iters=10,
-        internal_lr=1,
+        internal_lr=3,
         overall_lr=1e-3,
         loss_encoder_weight=1
     )
@@ -83,7 +83,7 @@ def train_pl():
     trainer = pl.Trainer(
         gpus=1,
         precision=16,
-        max_epochs=12,
+        max_epochs=16,
         # check_val_every_n_epoch=4,
         accumulate_grad_batches=64,
         profiler="simple",
@@ -110,7 +110,7 @@ def evaluate(model=None, path=None):
         # model.freeze()
 
     # Evaluate
-    dataset = MinatarDataset()
+    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
     eval_data_loader = DataLoader(dataset, batch_size=1)
 
     counter = 0
@@ -128,7 +128,7 @@ def evaluate(model=None, path=None):
 
 def visualize(pred, s, gt_sprime, gt_sappear):
     # Extract the information
-    pred_mask = pred['pred_mask'][0].detach() > 0.5
+    pred_mask = pred['pred_mask'][0].detach()
     pred_pos = pred['pred_reg'][0][:, 0:2].detach()
     pred_pos_var = pred['pred_reg_var'][0][:, 0:2].detach()
     pred_pos_var = pred_pos_var[:, 0] + pred_pos_var[:, 1]
@@ -142,7 +142,7 @@ def visualize(pred, s, gt_sprime, gt_sappear):
     }
     sns.relplot(
         data=pred_data, x='x', y='y',
-        size='var', alpha=0.5, style='vis',
+        size='var', alpha=0.5, hue='vis',
         legend=False
     )
 
