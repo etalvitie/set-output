@@ -7,7 +7,6 @@
 
 ### Environment Setup
 ```
-git clone https://github.com/LACE-Lab/set-output.git
 pip install -r requirements.txt
 pip install -e .
 ```
