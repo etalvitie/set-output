@@ -19,8 +19,8 @@ import seaborn as sns
 sns.set_style("whitegrid")
 
 def main():
-    # train_pl()
-    evaluate()
+    train_pl()
+    # evaluate()
 
 
 def train_pl():
