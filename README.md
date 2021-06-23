@@ -20,6 +20,15 @@ gdown --id 1gq028XAvreFu2Ynkxh7xOzfsIwk81IHY # bullet
 ```
 
 ### Running
+Quick version
+```
+python src\set_agent\minatar_dspn_model_test.py
+```
+Quick version (CPU only)
+```
+python src\set_agent\minatar_dspn_model_test_cpu.py
+```
+Full training
 ```
 python src\set_agent\minatar_dspn_model.py
 ```
