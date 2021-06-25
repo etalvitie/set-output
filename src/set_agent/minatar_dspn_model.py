@@ -98,6 +98,8 @@ def train_pl():
 
 
 def evaluate(model=None, path=None):
+    print("entered function...")
+
     # load model
     if model is None:
         if path is None:
@@ -109,9 +111,13 @@ def evaluate(model=None, path=None):
         model = SetDSPN.load_from_checkpoint(path)
         # model.freeze()
 
+    print("imported model...")
+
     # Evaluate
     dataset = MinatarDataset()
     eval_data_loader = DataLoader(dataset, batch_size=1)
+
+    print("loaded dataset...")
 
     counter = 0
     while counter < 20:
@@ -124,6 +130,8 @@ def evaluate(model=None, path=None):
         pred = model(s.unsqueeze(0), a.unsqueeze(0))
         visualize(pred, s, sprime, sappear)
         counter += 1
+    
+    print("finished...")
 
 
 def visualize(pred, s, gt_sprime, gt_sappear):

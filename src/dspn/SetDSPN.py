@@ -106,12 +106,12 @@ class SetDSPN(pl.LightningModule):
         pred_reg_var = pred[:, :, self.obj_reg_len:2*self.obj_reg_len]
         pred_attri = pred[:, :, 2*self.obj_reg_len:None]
         pred_mask = intermediate_masks[-1]
-
-        return {'pred_attri': pred_attri,
+        T = {'pred_attri': pred_attri,
                 'pred_mask': pred_mask,
                 'pred_reg': pred_reg,
                 'scene_vector': h,
                 'pred_reg_var': pred_reg_var}
+        return T
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)

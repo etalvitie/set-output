@@ -9,7 +9,7 @@
 
 using namespace std;
 
-class MinAtarInterface{
+class CPPWrapper{
   public:
     //constructor (take in checkpoint path to model)
     Class(string path);
