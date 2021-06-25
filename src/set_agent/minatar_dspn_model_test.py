@@ -25,7 +25,9 @@ def main():
 
 def train_pl():
     # Square linear
-    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json", dataset_size=100)
+    # dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_full_matched.json")
     dim_dict = dataset.get_dims()
     env_len = dim_dict["action_len"]
     obj_in_len = dim_dict["obj_len"]
@@ -48,9 +50,9 @@ def train_pl():
         obj_attri_len=2,
         env_len=env_len,
         latent_dim=64,
-        out_set_size=5,
+        out_set_size=3,
         n_iters=10,
-        internal_lr=3,
+        internal_lr=50,
         overall_lr=1e-3,
         loss_encoder_weight=1
     )
@@ -80,10 +82,11 @@ def train_pl():
 
 
     # Train
+    gpus = torch.cuda.device_count()
     trainer = pl.Trainer(
-        gpus=1,
+        gpus=gpus,
         precision=16,
-        max_epochs=16,
+        max_epochs=1,
         # check_val_every_n_epoch=4,
         accumulate_grad_batches=64,
         profiler="simple",
@@ -94,12 +97,10 @@ def train_pl():
 
     # Evaluate
     # trainer.test(model, test_dataloaders = val_data_loader)
-    evaluate(model=model)
+    # evaluate(model=model)
 
 
 def evaluate(model=None, path=None):
-    print("entered function...")
-
     # load model
     if model is None:
         if path is None:
@@ -111,13 +112,10 @@ def evaluate(model=None, path=None):
         model = SetDSPN.load_from_checkpoint(path)
         # model.freeze()
 
-    print("imported model...")
-
     # Evaluate
-    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
     eval_data_loader = DataLoader(dataset, batch_size=1)
-
-    print("loaded dataset...")
 
     counter = 0
     while counter < 20:
@@ -130,17 +128,9 @@ def evaluate(model=None, path=None):
         pred = model(s.unsqueeze(0), a.unsqueeze(0))
         visualize(pred, s, sprime, sappear)
         counter += 1
-    
-    print("finished...")
 
 
 def visualize(pred, s, gt_sprime, gt_sappear):
-    """ 
-        pred -> dictionary from model output
-        s -> set input of current state
-        gt_sprime -> ground truth set output of existing object
-        gt_sappear -> variable size set output of new object
-    """
     # Extract the information
     pred_mask = pred['pred_mask'][0].detach()
     pred_pos = pred['pred_reg'][0][:, 0:2].detach()
