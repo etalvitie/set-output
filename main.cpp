@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <iostream>
-#include "Class.cpp"
+#include "CPPWrapper.cpp"
+#include "State.cpp"
 #include <string>
 #include <tuple>
 #include <vector>
@@ -9,12 +10,8 @@
 using namespace std;
 
 int main(){
-    string path = "";
-
-    Class CPPWrapper(path);
-
-    model.addData(3);
-    model.addData(4);
+    // State s1();
+    CPPWrapper model();
     
     return 0;
 };
