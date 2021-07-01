@@ -37,7 +37,8 @@ class SetDSPN(pl.LightningModule):
                  n_iters=10,
                  internal_lr=0.5,
                  overall_lr=1e-3,
-                 loss_encoder_weight=0.1):
+                 loss_encoder_weight=0.1,
+                 loss_spr_weight=10):
         super().__init__()
         self.save_hyperparameters()
 
@@ -77,6 +78,7 @@ class SetDSPN(pl.LightningModule):
         self.loss_reg_weight = 1
         self.loss_mask_weight = 1
         self.loss_encoder_weight = loss_encoder_weight
+        self.loss_spr_weight = loss_spr_weight
 
     def forward(self, x, a=None):
         # z = self.encoder(x)
@@ -145,10 +147,11 @@ class SetDSPN(pl.LightningModule):
             loss_reg = 0
             loss_reg_var = 0
             loss_mask = 0
+            loss_spr = 0
 
             # Iterate through all batches
             for batch_idx, match_result in enumerate(match_results):
-                pred_raw = pred["pred_reg"][batch_idx]
+                pred_raw = pred["pred_reg"][batch_idx].contiguous()     # Set to be contiguous for seperation loss cdist calculation
                 gt_raw = gt_label[batch_idx]
                 pred_var_raw = pred["pred_reg_var"][batch_idx]
                 pred_var_reordered = match_result["pred_var_reordered"]
@@ -175,6 +178,11 @@ class SetDSPN(pl.LightningModule):
                 # print("Tgt mask", tgt_mask.shape)
                 loss_mask += self.loss_mask_criterion(pred_mask, tgt_mask)
 
+                # Loss for prediction separation
+                dist_matrix = torch.cdist(pred_raw, pred_raw, p=2)
+                # loss_spr += 1/torch.sum(dist_matrix)
+                loss_spr += torch.exp(-torch.sum(dist_matrix)/10)
+
             # Loss for the encoder
             gt_scene, gt_mask = self._cvt_to_scene_vect(gt_label)
             gt_new_set_vector = self.dspn_encoder(gt_scene, gt_mask)
@@ -184,7 +192,8 @@ class SetDSPN(pl.LightningModule):
             # summing all the losses
             loss = (loss_reg + loss_reg_var) * self.loss_reg_weight +\
                    loss_mask * self.loss_mask_weight +\
-                   loss_encoder * self.loss_encoder_weight
+                   loss_encoder * self.loss_encoder_weight +\
+                   loss_spr * self.loss_spr_weight
 
             # Putting into a dictionary
             losses = {
@@ -192,7 +201,8 @@ class SetDSPN(pl.LightningModule):
                 'loss_reg': loss_reg,
                 'loss_reg_var': loss_reg_var,
                 'loss_mask': loss_mask,
-                'loss_encoder': loss_encoder
+                'loss_encoder': loss_encoder,
+                'loss_spr': loss_spr
             }
 
         return losses
@@ -210,6 +220,7 @@ class SetDSPN(pl.LightningModule):
         self.log('train_reg_var_loss', losses['loss_reg_var'])
         self.log('train_mask_loss', losses['loss_mask'])
         self.log('train_encoder_loss', losses['loss_encoder'])
+        self.log('train_spr_loss',losses['loss_spr'])
 
         return losses['loss']
 
@@ -226,6 +237,7 @@ class SetDSPN(pl.LightningModule):
         self.log('val_reg_var_loss', losses['loss_reg_var'])
         self.log('val_mask_loss', losses['loss_mask'])
         self.log('val_encoder_loss', losses['loss_encoder'])
+        self.log('val_spr_loss', losses['loss_spr'])
 
     def _cvt_to_scene_vect(self, gt_label):
         bs, num_obj, reg_len = gt_label.shape

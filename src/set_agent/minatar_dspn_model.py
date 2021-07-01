@@ -19,13 +19,15 @@ import seaborn as sns
 sns.set_style("whitegrid")
 
 def main():
-    train_pl()
-    # evaluate()
+    # train_pl()
+    evaluate()
 
 
 def train_pl():
     # Square linear
-    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_full_matched.json")
     dim_dict = dataset.get_dims()
     env_len = dim_dict["action_len"]
     obj_in_len = dim_dict["obj_len"]
@@ -48,9 +50,9 @@ def train_pl():
         obj_attri_len=2,
         env_len=env_len,
         latent_dim=64,
-        out_set_size=5,
+        out_set_size=3,
         n_iters=10,
-        internal_lr=3,
+        internal_lr=50,
         overall_lr=1e-3,
         loss_encoder_weight=1
     )
@@ -80,6 +82,7 @@ def train_pl():
 
 
     # Train
+    gpus = torch.cuda.device_count()
     trainer = pl.Trainer(
         gpus=1,
         precision=16,
@@ -114,7 +117,9 @@ def evaluate(model=None, path=None):
     print("imported model...")
 
     # Evaluate
-    dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
+    dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_full_matched.json")
     eval_data_loader = DataLoader(dataset, batch_size=1)
 
     print("loaded dataset...")
@@ -157,7 +162,7 @@ def visualize(pred, s, gt_sprime, gt_sappear):
     sns.relplot(
         data=pred_data, x='x', y='y',
         size='var', alpha=0.5, hue='vis',
-        legend=False
+        legend='full'
     )
 
     # Plot ground truth
