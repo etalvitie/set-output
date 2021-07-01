@@ -95,7 +95,6 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 
 	// test
 	// string x = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(predict), "utf-8", "~E~"));
-	cout << 3 << endl;
 
 	// if class exists and can be called
 	if (predict && PyCallable_Check(predict))
@@ -115,7 +114,7 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 
 		Py_ssize_t actionSize = a.size();
 		PyObject *action = PyTuple_New(actionSize);
-		for (Py_ssize_t i = 0; i < row; i++) {
+		for (Py_ssize_t i = 0; i < actionSize; i++) {
 			PyTuple_SET_ITEM(action, i, PyFloat_FromDouble(a.at(i)));
 		}
 
@@ -123,7 +122,11 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 
 		cout << "called predict function in python..." << endl;
 
-		if (PyTuple_Check(pyTuple)) 
+		if (pyTuple == NULL) 
+		{
+			PyErr_Print();
+		}
+		else if (PyTuple_Check(pyTuple)) 
 		{
 			Py_ssize_t s_pos = 0;
 			Py_ssize_t sprimepos = 1;
@@ -135,14 +138,18 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			vector<vector<float>> s_ = pyToVector(PyTuple_GetItem(pyTuple, s_pos));
 			vector<vector<float>> sprime = pyToVector(PyTuple_GetItem(pyTuple, sprimepos));
 			vector<vector<float>> sappear = pyToVector(PyTuple_GetItem(pyTuple, sappearpos));
-			Py_DECREF(set);
-			Py_DECREF(action);
 			return make_tuple(s_, sprime, sappear);
 		}
 		else
 		{
 			cout << "ERROR: returned a nontuple" << endl;
 		}
+
+		for (Py_ssize_t i = 0; i < PyList_Size(set); i++) {
+			Py_DECREF(PyList_GetItem(set, i));
+		}
+		Py_DECREF(set);
+		Py_DECREF(action);
 	}
 	else
 	{
@@ -162,7 +169,7 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 			vector<float> obj;
 			
 			for (Py_ssize_t j = 0; j < height; j++) {
-				obj.push_back(PyLong_AsLong(PyList_GetItem(item, j)));
+				obj.push_back(PyFloat_AsDouble(PyList_GetItem(item, j)));
 			}
 
 			output.push_back(obj);
@@ -171,6 +178,14 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 		throw logic_error("Passed PyObject pointer was not a list array...");
 	}
 
+	Py_DECREF(incoming);
+
+	// for (size_t i = 0; i < output.size(); i++) {
+    //     vector<float> temp = output.at(i);
+    //     for (size_t j = 0; j < temp.size(); j++)
+    //     cout << "element: " << temp.at(j) << endl;
+    // }
+	cout << "finished conversion..." << endl;
 	return output;
 }
 

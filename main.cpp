@@ -55,7 +55,7 @@ int main(){
     vector<float> o2{1,1,1,1,1,1,1,1};
     vector<float> o3{2,2,2,2,2,2,2,2};
     vector<vector<float>> s1{o1,o2,o3};
-    vector<float> action{0,1,0,0};
+    vector<float> action{0,1,0,0,1,0};
 
     //vector<vector<float>> x = test(s1);
     //cout << x.size() << endl;
@@ -90,15 +90,17 @@ int main(){
     
     CPPWrapper model;
 
-    // is NULL
     cout << PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(model.model_), "utf-8", "~E~")) << endl;
 
-    cout << 1 << endl;
 
-    // tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output = model.predict(s1,action);
-    // vector<vector<float>> set = get<0>(output);
+    tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output = model.predict(s1,action);
+    vector<vector<float>> set = get<0>(output);
     
-    
+    for (size_t i = 0; i < set.size(); i++) {
+        vector<float> temp = set.at(i);
+        for (size_t j = 0; j < temp.size(); j++)
+        cout << "element: " << temp.at(j) << endl;
+    }
 
 
 

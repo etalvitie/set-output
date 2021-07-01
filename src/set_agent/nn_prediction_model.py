@@ -113,17 +113,18 @@ class PredictionModel:
         a = self._tensorfy(a)
 
         # Predicts the existing objects and new objects
-        sprime = self.exist_model(s, a)
-        sappear = self.appear_model(s, a)
+        sprime = self.exist_model(s, a)['pred_reg']
+        sappear = self.appear_model(s, a)['pred_reg']
 
+        print(sprime)
+        
         # Concatenate the two matrixes
         s_ = torch.cat([sprime, sappear], dim=1)
 
         # Converts back to Python Array
-        sprime = sprime.cpu().numpy().tolist()
-        sappear = sappear.cpu().numpy().tolist()
-        s_ = s_.cpu().numpy().tolist()
-
+        sprime = sprime.detach().cpu().numpy().tolist()[0]
+        sappear = sappear.detach().cpu().numpy().tolist()[0]
+        s_ = s_.detach().cpu().numpy().tolist()[0]
         return s_, sprime, sappear
 
     def _tensorfy(self, m):
@@ -139,7 +140,8 @@ class PredictionModel:
         """
 
         # Converts into Tensor
-        m_ = torch.Tensor(m, device=self.device)
+        m_ = torch.Tensor(m)
+        m_ = m_.to(self.device)
 
         # Prepares it in the batch format
         m_ = m_.unsqueeze(0)
