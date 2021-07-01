@@ -51,10 +51,11 @@ class PredictionModel:
             )
 
         # Decide whether to run the model on CPU or GPU
-        self.device = 'gpu' if torch.cuda.is_available() else 'cpu'
+        dev = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        self.device = torch.device(dev)
         self.exist_model = self.exist_model.to(self.device)
         self.appear_model = self.appear_model.to(self.device)
-        print("Using GPU?", "True" if self.device == 'gpu' else "False")
+        print("Using GPU?", "True" if dev == 'cuda:0' else "False")
 
         # Flags and logging
         self.iter_count = 0
