@@ -152,13 +152,16 @@ class MinatarDataset(Dataset):
             assert in_set.shape[0] == out_set.shape[0]
 
             # Only use the bullet
-            if len(appear_set.numpy().tolist()) != 0:
-                bullet_mask = (appear_set.numpy()[:, 8] == 1)
-                if bullet_mask.any():
-                    bullet = appear_set[bullet_mask]
-                    self.data_matched.append(
-                        (in_set.numpy().tolist(), a, out_set.numpy().tolist(), bullet.tolist(), r))
+            # if len(appear_set.numpy().tolist()) != 0:
+            #     bullet_mask = (appear_set.numpy()[:, 8] == 1)
+            #     if bullet_mask.any():
+            #         bullet = appear_set[bullet_mask]
+            #         self.data_matched.append(
+            #             (in_set.numpy().tolist(), a, out_set.numpy().tolist(), bullet.tolist(), r))
 
+            # Only include the frames with new objects
+            if len(appear_set.numpy().tolist()) != 0:
+                self.data_matched.append((in_set.numpy().tolist(), a, out_set.numpy().tolist(), appear_set.numpy().tolist(), r))
 
             # self.data_matched.append((in_set.numpy().tolist(), a, out_set.numpy().tolist(), appear_set.numpy().tolist(), r))
 
