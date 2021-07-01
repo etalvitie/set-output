@@ -115,8 +115,6 @@ class PredictionModel:
         # Predicts the existing objects and new objects
         sprime = self.exist_model(s, a)['pred_reg']
         sappear = self.appear_model(s, a)['pred_reg']
-
-        print(sprime)
         
         # Concatenate the two matrixes
         s_ = torch.cat([sprime, sappear], dim=1)
