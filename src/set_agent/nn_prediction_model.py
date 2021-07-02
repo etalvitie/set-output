@@ -71,18 +71,18 @@ class PredictionModel:
             sappear: [Python Array] of next frame object states of appearing objects.
             r:  [Float] Reward of the action state pair.
         """
+        print("into updateModel python function...")
         # Converts input into the format that the model needs
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
-
+        
         # Update existing obj model
         if self.train_exist:
             exist_loss = self.exist_model.training_step(train_batch, self.iter_count)
             self.exist_model.optimizer.zero_grad()
             exist_loss.backward()
             self.exist_model.optimizeroptimizer.step()
-
         # Update appearing obj model
         if self.train_appear:
             appear_loss = self.appear_model.training_step(train_batch, self.iter_count)
@@ -92,6 +92,8 @@ class PredictionModel:
 
         # Increase iter counter
         self.iter_count += 1
+
+        print("Update finished on python side...")
         return
 
     def predict(self, s, a):

@@ -10,9 +10,6 @@ using namespace std;
 
 class CPPWrapper{
   public:
-    size_t obj_in_len;
-    size_t env_len;
-    CPyObject model_;
     //constructor (take in checkpoint path to model)
     CPPWrapper();
 
@@ -24,10 +21,13 @@ class CPPWrapper{
 
     tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> predict(const vector<vector<float>>& s, const vector<float>& a);
     vector<vector<float>> pyToVector(PyObject* incoming);
-
-    // void updateModel(vector<ObjectState> s, vector<ObjectState> a, vector<ObjectState> sprime, vector<ObjectState> sappear, float r);
+    void updateModel(vector<vector<float>> s, vector<float> a, vector<vector<float>> sprime, vector<vector<float>> sappear, float r);
+    PyObject* vectorToPyTuple(const vector<vector<float>>& s);
+    void decref(PyObject*& doublevector);
 
   private:
+    size_t obj_in_len;
+    size_t env_len;
     bool train_exist;
     bool train_appear;
     size_t obj_reg_len;
@@ -35,6 +35,7 @@ class CPPWrapper{
     size_t new_set_size;
     string exist_ckpt_path;
     string appear_ckpt_path;
+    CPyObject model_;
 };
 
 #endif

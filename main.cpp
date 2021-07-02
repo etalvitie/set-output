@@ -56,78 +56,21 @@ int main(){
     vector<float> o3{2,2,2,2,2,2,2,2};
     vector<vector<float>> s1{o1,o2,o3};
     vector<float> action{0,1,0,0,1,0};
-
-    //vector<vector<float>> x = test(s1);
-    //cout << x.size() << endl;
-
-
-    // float** s;
-    // float* a;
-    
-    // if (s1.size() > 0)
-    // {
-    //     s = new float*[s1.size()];
-    //     for (size_t i = 0; i < s1.size(); i++)
-    //     {
-    //         s[i] = new float[s1.at(0).size()];
-    //     }
-    // }
-
-	// a = new float[action.size()];
-    
-    // for (size_t i = 0; i < s1.size(); i++)
-    // {
-    //     for (size_t j = 0; j < s1.at(0).size(); j++)
-    //     {
-    //         *(*(s+i)+j) = s1[i][j];
-    //     }
-    // }
-
-    // for (size_t i = 0; i < action.size(); i++)
-    // {
-    //     *(a+i) = action[i];
-    // }
     
     CPPWrapper model;
 
-    cout << PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(model.model_), "utf-8", "~E~")) << endl;
-
-
     tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output = model.predict(s1,action);
-    vector<vector<float>> set = get<0>(output);
+    vector<vector<float>> sprime = get<1>(output);
+    vector<vector<float>> sappear = get<2>(output);
+    float r = 1;
     
-    for (size_t i = 0; i < set.size(); i++) {
-        vector<float> temp = set.at(i);
+    for (size_t i = 0; i < sprime.size(); i++) {
+        vector<float> temp = sprime.at(i);
         for (size_t j = 0; j < temp.size(); j++)
         cout << "element: " << temp.at(j) << endl;
     }
 
-
-
-    // vector<bool> vis1{true,false};
-    // vector<bool> vis2{true,true,false,false};
-    // ObjectState s1(1,1,0,0,vis1,1,1);
-    // ObjectState s2(2,2,0,0,vis2,1,2);
-    // cout << s1 << endl;
-    // cout << s2 << endl;
-    // cout << s1.getVisibility(0) << endl;
-    // cout << s1.getVisibility(5) << endl;
-    // cout << s1.getVisibility(62) << endl;
-
-    // vector<float> action{0,0};
-
-    // cout << "Test Predict and Constructor..." << endl;
-    // CPPWrapper model;
-    // vector<ObjectState> set;
-    // set.push_back(s1);
-    // set.push_back(s2);
-    // tuple<vector<ObjectState>, vector<ObjectState>, vector<ObjectState>> pred1 = model.predict(set,action);
-
-
-    // vector<ObjectState> vect = get<0>(pred1);
-    // for (auto obj : vect) {
-    //     cout << obj << endl;
-    // }
+    model.updateModel(s1,action,sprime,sappear,r);
 
     return 0;
 };
