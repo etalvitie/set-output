@@ -57,6 +57,10 @@ class PredictionModel:
         self.appear_model = self.appear_model.to(self.device)
         print("Using GPU?", "True" if dev == 'cuda:0' else "False")
 
+        # Optimizers
+        self.exist_optimizer = torch.optim.Adam(self.exist_model.parameters(), lr=1e-3)
+        self.appear_optimizer = torch.optim.Adam(self.appear_model.parameters(), lr=1e-3)
+
         # Flags and logging
         self.iter_count = 0
 
@@ -71,7 +75,7 @@ class PredictionModel:
             sappear: [Python Array] of next frame object states of appearing objects.
             r:  [Float] Reward of the action state pair.
         """
-        # Converts input into the format that the model needs
+        # Converts input into the format that the existing model needs
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
@@ -79,16 +83,16 @@ class PredictionModel:
         # Update existing obj model
         if self.train_exist:
             exist_loss = self.exist_model.training_step(train_batch, self.iter_count)
-            self.exist_model.optimizer.zero_grad()
+            self.exist_optimizer.zero_grad()
             exist_loss.backward()
-            self.exist_model.optimizeroptimizer.step()
+            self.exist_optimizer.step()
 
         # Update appearing obj model
         if self.train_appear:
             appear_loss = self.appear_model.training_step(train_batch, self.iter_count)
-            self.appear_model.optimizer.zero_grad()
+            self.appear_optimizer.zero_grad()
             appear_loss.backward()
-            self.appear_model.optimizeroptimizer.step()
+            self.appear_optimizer.step()
 
         # Increase iter counter
         self.iter_count += 1
@@ -152,6 +156,16 @@ Test code
 """
 def main():
     model = PredictionModel(obj_in_len=8, env_len=6)
+
+    s = [[0] * 8] * 2
+    a = [0] * 6
+    sprime = [[0] * 8] * 2
+    sappear = [[0] * 8] * 3
+    r = 0
+
+    model.updateModel(s, a, sprime, sappear, r)
+
+    return 0
 
 if __name__ == '__main__':
     main()

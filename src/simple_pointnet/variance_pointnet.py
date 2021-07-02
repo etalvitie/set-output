@@ -123,7 +123,7 @@ class VariancePointNet(pl.LightningModule):
         # Loss + matching calculation
         self.matcher = VarianceMatcher()
         self.loss_reg_criterion = nn.MSELoss()
-        self.loss_mask_criterion = nn.CrossEntropyLoss()
+        self.loss_mask_criterion = nn.MSELoss()
 
         self.loss_reg_weight = 1
         self.loss_mask_weight = 0
@@ -207,8 +207,7 @@ class VariancePointNet(pl.LightningModule):
         pred_attri = self.linear_attri(h)
 
         # Extract the output masks
-        pred_mask = pred_attri[:, :, 0:2]
-        pred_mask = self.mask_softmax(pred_mask)
+        pred_mask = pred_attri[:, :, 0]
 
         # pred_pos = objs + pred_delta
         if debug:
@@ -237,27 +236,31 @@ class VariancePointNet(pl.LightningModule):
         # Iterate through all batches
         for batch_idx, match_result in enumerate(match_results):
             pred_raw = pred["pred_reg"][batch_idx]
+            pred_reg_raw = pred_raw[:, 0:2]
+            pred_reg_var_raw = pred["pred_reg_var"][batch_idx]
+
             gt_raw = gt_label[batch_idx]
-            pred_var_raw = pred["pred_reg_var"][batch_idx]
+            gt_raw_reg = gt_raw[:, 0:2]
+
             pred_var_reordered = match_result["pred_var_reordered"]
             pred_matched = match_result['pred_reordered']
             gt_matched = match_result['gt_reordered']
 
             # Loss for regression (position)
             # loss_reg += self.loss_reg_criterion(pred_matched, gt_matched)
-            loss_reg += self.loss_reg_criterion(pred_raw, gt_raw)
+            loss_reg += self.loss_reg_criterion(pred_reg_raw, gt_raw_reg)
 
             # Alternative:
             # print(gt_matched)
             # print(pred_matched)
-            # loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_raw_var) + 0.5*torch.log(pred_raw_var))
+            # loss_reg += torch.mean((gt_raw - pred_raw)**2 / (2*pred_reg_var_raw) + 0.5*torch.log(pred_reg_var_raw))
             # loss_reg += torch.mean((gt_matched - pred_matched) ** 2)
 
             # Loss for regression variance
-            pred_diff_square = match_result['pred_diff'] ** 2
-            zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
-            loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
-            loss_reg_var += torch.mean((torch.abs(pred_var_raw) - torch.abs(gt_raw - pred_raw))**2)
+            # pred_diff_square = match_result['pred_diff'] ** 2
+            # zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
+            # loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
+            loss_reg_var += torch.mean((torch.abs(pred_reg_var_raw) - torch.abs(gt_raw_reg - pred_reg_raw)) ** 2)
 
             # Loss for output mask
             pred_mask = pred['pred_mask'][batch_idx]
@@ -273,7 +276,7 @@ class VariancePointNet(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         # Calculate the prediction
-        s, a, sprime, r = train_batch
+        s, a, sprime, sappear, r = train_batch
         pred = self.forward(s, a)
 
         # Calculate the loss
