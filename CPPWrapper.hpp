@@ -11,7 +11,17 @@ using namespace std;
 class CPPWrapper{
   public:
     //constructor (take in checkpoint path to model)
-    CPPWrapper();
+    CPPWrapper(
+      string exist_ckpt_path,
+      string appear_ckpt_path,
+      bool train_exist,
+      bool train_appear,
+      size_t obj_in_len,
+      size_t env_len,
+      size_t obj_reg_len,
+      size_t obj_attri_len,
+      size_t new_set_size
+    );
 
     //destructor
     ~CPPWrapper();
@@ -26,15 +36,15 @@ class CPPWrapper{
     void decref(PyObject*& doublevector);
 
   private:
-    size_t obj_in_len;
-    size_t env_len;
+    string exist_ckpt_path;
+    string appear_ckpt_path;
     bool train_exist;
     bool train_appear;
+    size_t obj_in_len;
+    size_t env_len;
     size_t obj_reg_len;
     size_t obj_attri_len;
     size_t new_set_size;
-    string exist_ckpt_path;
-    string appear_ckpt_path;
     CPyObject model_;
 };
 

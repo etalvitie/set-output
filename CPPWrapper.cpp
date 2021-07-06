@@ -8,20 +8,27 @@
 #else
 #define PATH_ "set_agent/" // Default path
 
-// set input, action vector for predict are from the training loop
 
 using namespace std;
 
-CPPWrapper::CPPWrapper() : 
-				exist_ckpt_path(""),
-                appear_ckpt_path(""),
-                train_exist(true),
-                train_appear(true),
-                obj_in_len(8),
-                env_len(6),
-                obj_reg_len(2),
-                obj_attri_len(2),
-                new_set_size(3)
+CPPWrapper::CPPWrapper(string exist_ckpt_path,
+						string appear_ckpt_path,
+						bool train_exist,
+						bool train_appear,
+						size_t obj_in_len,
+						size_t env_len,
+						size_t obj_reg_len,
+						size_t obj_attri_len,
+						size_t new_set_size) : 
+				exist_ckpt_path(exist_ckpt_path),
+                appear_ckpt_path(appear_ckpt_path),
+                train_exist(train_exist),
+                train_appear(train_appear),
+                obj_in_len(obj_in_len),
+                env_len(env_len),
+                obj_reg_len(obj_reg_len),
+                obj_attri_len(obj_attri_len),
+                new_set_size(new_set_size)
 {
 
 	// Initialize Python environment
@@ -122,9 +129,6 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			Py_ssize_t sprimepos = 1;
 			Py_ssize_t sappearpos = 2;
 
-			// vector<vector<float>> s_ = pyToCppArray(PyTuple_GetItem(pyTuple, s_pos));
-			// vector<vector<float>> sprime = pyToCppArray(PyTuple_GetItem(pyTuple, sprimepos));
-			// vector<vector<float>> sappear = pyToCppArray(PyTuple_GetItem(pyTuple, sappearpos));
 			vector<vector<float>> s_ = pyToVector(PyTuple_GetItem(pyTuple, s_pos));
 			vector<vector<float>> sprime = pyToVector(PyTuple_GetItem(pyTuple, sprimepos));
 			vector<vector<float>> sappear = pyToVector(PyTuple_GetItem(pyTuple, sappearpos));
@@ -167,13 +171,6 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 	}
 
 	Py_DECREF(incoming);
-
-	// for (size_t i = 0; i < output.size(); i++) {
-    //     vector<float> temp = output.at(i);
-    //     for (size_t j = 0; j < temp.size(); j++)
-    //     cout << "element: " << temp.at(j) << endl;
-    // }
-	cout << "finished conversion..." << endl;
 	return output;
 }
 

@@ -95,6 +95,8 @@ class PredictionModel:
 
         # Increase iter counter
         self.iter_count += 1
+
+        print("finished updating model...")
         return
 
     def predict(self, s, a):

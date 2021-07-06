@@ -57,7 +57,7 @@ int main(){
     vector<vector<float>> s1{o1,o2,o3};
     vector<float> action{0,1,0,0,1,0};
     
-    CPPWrapper model;
+    CPPWrapper model("","",true,true,8,6,2,2,3);
 
     tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output = model.predict(s1,action);
     vector<vector<float>> sprime = get<1>(output);
