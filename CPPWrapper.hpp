@@ -1,5 +1,5 @@
-#ifndef CLASS_HPP
-#define CLASS_HPP
+#ifndef CPPWRAPPER_HPP
+#define CPPWRAPPER_HPP
 
 #include "CPyObject.hpp"
 #include <string>

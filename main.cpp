@@ -1,5 +1,5 @@
 #include <iostream>
-#include "CPPWrapper.cpp"
+#include "CPPWrapper.hpp"
 #include <string>
 #include <tuple>
 #include <vector>
