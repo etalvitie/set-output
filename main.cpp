@@ -60,6 +60,7 @@ int main(){
     CPPWrapper model("","",true,true,8,6,2,2,3);
 
     tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output = model.predict(s1,action);
+
     vector<vector<float>> sprime = get<1>(output);
     vector<vector<float>> sappear = get<2>(output);
     float r = 1;
@@ -71,6 +72,7 @@ int main(){
     }
 
     model.updateModel(s1,action,sprime,sappear,r);
+	model.updateModel(s1,action,sprime,sappear,r);
 
     return 0;
 };

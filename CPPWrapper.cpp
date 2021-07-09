@@ -98,11 +98,18 @@ CPPWrapper::~CPPWrapper() {
 // Calls the predict function in Python model
 tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWrapper::predict(const vector<vector<float>>& s, const vector<float>& a)
 {
-	cout << "into the wrapper predict function..." << endl;
 	CPyObject predict = PyObject_GetAttrString(model_, "predict");
+	if (predict == NULL)
+	{
+		PyErr_Print();
+	}
+	// CPyObject update = PyObject_GetAttrString(model_, "updateModel");
 
-	// test
+	// TEST FOR ATTR STRING
 	// string x = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(predict), "utf-8", "~E~"));
+	// string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(update), "utf-8", "~E~"));
+	// cout << x << endl;
+	// cout << y << endl;
 
 	// if class exists and can be called
 	if (predict && PyCallable_Check(predict))
@@ -170,7 +177,7 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 		throw logic_error("Passed PyObject pointer was not a list array...");
 	}
 
-	Py_DECREF(incoming);
+	//Py_DECREF(incoming);
 	return output;
 }
 
@@ -182,6 +189,9 @@ void CPPWrapper::updateModel(vector<vector<float>> s_, vector<float> a_,
 
 	if (updateModel && PyCallable_Check(updateModel))
 	{
+		string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(updateModel), "utf-8", "~E~"));
+		cout << y << endl;
+
 		PyObject *s = vectorToPyTuple(s_);
 		PyObject *sprime = vectorToPyTuple(sprime_);
 		PyObject *sappear = vectorToPyTuple(sappear_);
@@ -195,10 +205,10 @@ void CPPWrapper::updateModel(vector<vector<float>> s_, vector<float> a_,
 		PyObject_CallFunction(updateModel, "(OOOOf)", s, action, sprime, sappear, r);
 		
 		// deallocate
-		Py_DECREF(action);
-		decref(s);
-		decref(sprime);
-		decref(sappear);
+		// Py_DECREF(action);
+		// decref(s);
+		// decref(sprime);
+		// decref(sappear);
 
 		cout << "Updated model successfully!" << endl;
 	}
