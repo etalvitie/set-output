@@ -146,8 +146,8 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			cout << "ERROR: returned a nontuple" << endl;
 		}
 
-		decref(set);
-		Py_DECREF(action);
+		// decref(set);
+		// Py_DECREF(action);
 	}
 	else
 	{

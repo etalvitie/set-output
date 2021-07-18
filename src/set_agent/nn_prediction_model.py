@@ -75,6 +75,7 @@ class PredictionModel:
             r:  [Float] Reward of the action state pair.
         """
         # Converts input into the format that the existing model needs
+        print("into updatemodel on python side!!")
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
