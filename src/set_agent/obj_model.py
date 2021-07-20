@@ -42,7 +42,7 @@ BATCH_SIZE = 32
 REPLAY_BUFFER_SIZE = 100000
 TARGET_NETWORK_UPDATE_FREQ = 1000
 TRAINING_FREQ = 1
-NUM_FRAMES = 20000
+NUM_FRAMES = 3000
 FIRST_N_FRAMES = 100000
 REPLAY_START_SIZE = 5000
 END_EPSILON = 0.1
@@ -529,7 +529,7 @@ def dqn(env, replay_off, target_off, output_file_name, offline_dataset=False, st
             }, output_file_name + "_checkpoint")
 
     # Store the collected dataset
-    filename = "dataset_" + "random_" + str(NUM_FRAMES) + ".json"
+    filename = "asterix_dataset_" + "random_" + str(NUM_FRAMES) + ".json"
     with open(filename, 'w') as json_file:
         json.dump(dataset, json_file, indent=6)
 

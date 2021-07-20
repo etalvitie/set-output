@@ -1,5 +1,5 @@
 #include <iostream>
-#include "CPPWrapper.cpp"
+#include "CPPWrapper.hpp"
 #include <string>
 #include <tuple>
 #include <vector>
@@ -60,6 +60,7 @@ int main(){
     CPPWrapper model("","",true,true,8,6,2,2,3);
 
     tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output = model.predict(s1,action);
+
     vector<vector<float>> sprime = get<1>(output);
     vector<vector<float>> sappear = get<2>(output);
     float r = 5;
@@ -71,6 +72,7 @@ int main(){
     }
 
     model.updateModel(s1,action,sprime,sappear,r);
+	model.updateModel(s1,action,sprime,sappear,r);
 
 	tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>> output2 = model.predict(s1,action);
 	vector<vector<float>> sprime2 = get<1>(output2);

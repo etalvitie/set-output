@@ -24,8 +24,14 @@ class Simple_PointNet(pl.LightningModule):
     A naive implementation of pointnet.
     """
 
-    def __init__(self, env_len=1, obj_in_len=2, obj_reg_len=2, obj_attri_len=2, out_set_size=4, hidden_dim=256,
-                 num_lstm_layer=1):
+    def __init__(self,
+                 env_len=1,
+                 obj_in_len=2,
+                 obj_reg_len=2,
+                 obj_attri_len=2,
+                 out_set_size=4,
+                 hidden_dim=256,
+                 type_separate=False):
         super().__init__()
         self.save_hyperparameters()
 
@@ -35,7 +41,7 @@ class Simple_PointNet(pl.LightningModule):
         self.obj_reg_len = obj_reg_len
         self.obj_attri_len = obj_attri_len
         self.env_len = env_len
-        self.num_lstm_layer = num_lstm_layer
+        self.type_separate = type_separate
 
         # We no longer need the CNN preprocessing
         # However, we need an embedding layer

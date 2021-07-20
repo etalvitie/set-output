@@ -1,5 +1,5 @@
-#ifndef CLASS_HPP
-#define CLASS_HPP
+#ifndef CPPWRAPPER_HPP
+#define CPPWRAPPER_HPP
 
 #include "CPyObject.hpp"
 #include <string>
@@ -25,9 +25,6 @@ class CPPWrapper{
 
     //destructor
     ~CPPWrapper();
-
-    // tuple<float**, float**, float**> predict(float** s, float* a);
-    // float** pyToCppArray(PyObject* incoming);
 
     tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> predict(const vector<vector<float>>& s, const vector<float>& a);
     vector<vector<float>> pyToVector(PyObject* incoming);

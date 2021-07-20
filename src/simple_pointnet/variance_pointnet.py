@@ -1,5 +1,6 @@
 import glob
 import os
+import copy
 
 import torch
 from torch import nn
@@ -24,8 +25,15 @@ class VariancePointNet(pl.LightningModule):
     A naive implementation of pointnet.
     """
 
-    def __init__(self, env_len=1, obj_in_len=2, obj_reg_len=2, obj_attri_len=2, out_set_size=4, hidden_dim=256,
-                 num_lstm_layer=1):
+    def __init__(self,
+                 env_len=1,
+                 obj_in_len=2,
+                 obj_reg_len=2,
+                 obj_attri_len=2,
+                 obj_type_len=4,
+                 out_set_size=4,
+                 hidden_dim=256,
+                 type_separate=False):
         super().__init__()
         self.save_hyperparameters()
 
@@ -34,8 +42,9 @@ class VariancePointNet(pl.LightningModule):
         self.obj_in_len = obj_in_len
         self.obj_reg_len = obj_reg_len
         self.obj_attri_len = obj_attri_len
+        self.obj_type_len = obj_type_len
         self.env_len = env_len
-        self.num_lstm_layer = num_lstm_layer
+        self.type_separate = type_separate
 
         self.dropout = nn.Dropout(p=0.1)
 
@@ -63,7 +72,6 @@ class VariancePointNet(pl.LightningModule):
         )
 
         # Output heads
-
         self.linear_attri = nn.Sequential(
             nn.Linear(1152, 512),
             nn.ReLU(),
@@ -77,23 +85,7 @@ class VariancePointNet(pl.LightningModule):
             nn.Linear(128, obj_attri_len),
             # nn.Sigmoid()
         )
-        # self.linear_regs = []
-        # for i in range(4):
-        #     self.linear_regs.append(nn.Sequential(
-        #         nn.Linear(1152, 512),
-        #         nn.ReLU(),
-        #         self.dropout,
-        #         nn.Linear(512, 256),
-        #         nn.ReLU(),
-        #         self.dropout,
-        #         nn.Linear(256, 128),
-        #         nn.ReLU(),
-        #         self.dropout,
-        #         nn.Linear(128, 64),
-        #         nn.ReLU(),
-        #         self.dropout,
-        #         nn.Linear(64, 2 * obj_reg_len),
-        #     ))
+
         self.linear_reg = nn.Sequential(
                 nn.Linear(1152, 512),
                 nn.ReLU(),
@@ -109,13 +101,15 @@ class VariancePointNet(pl.LightningModule):
                 self.dropout,
                 nn.Linear(64, 2 * obj_reg_len),
             )
-        self.relu = nn.ReLU()
 
-        # New objects generations
-        # self.new_obj_net = nn.LSTM(
-        #     input_size=hidden_dim, hidden_size=3 * hidden_dim,
-        #     num_layers=self.num_lstm_layer, batch_first=True
-        # )
+        # Type Separate Model
+        if self.type_separate:
+            self.linear_attris, self.linear_regs = nn.ModuleList(), nn.ModuleList()
+            for _ in range(obj_type_len):
+                self.linear_attris.append(copy.deepcopy(self.linear_attri))
+                self.linear_regs.append(copy.deepcopy(self.linear_reg))
+
+        self.relu = nn.ReLU()
 
         # Output masks
         self.mask_softmax = nn.Softmax(dim=2)
@@ -180,34 +174,53 @@ class VariancePointNet(pl.LightningModule):
         h = torch.cat((emb_objs, h_set, h_env), dim=2)                # Shape: [BS, M, 3*HIDDEN_DIM]
         # h_global = torch.cat((h_env_vector, h_set_vector), dim=1)   # Shape: [BS, 2*HIDDEN_DIM]
 
-        # LSTM version
-        # h0 = h_set
-        # c0 = h_env
-        # h, (_, _) = self.new_obj_net(h_objs, (h0, c0))
-        # h = self.decoder(h)
+        # If TRUE, Use different decoders based on object types
+        if self.type_separate:
+            pred_reg_result = []
+            pred_attri = []
+            for b in range(bs):
+                batch_reg = []
+                batch_attri = []
+                for i in range(in_set_size):
+                    x = h[b, i, :]
+                    type = x[self.obj_reg_len : self.obj_reg_len + self.obj_type_len]
+                    type_idx = torch.argmax(type, dim=0)
+                    
+                    # Select the model based on the type
+                    reg_model = self.linear_regs[type_idx]
+                    attri_model = self.linear_attris[type_idx]
 
-        # Predict
-        # pred_reg_result = []
-        # for batch in range(bs):
-        #     batch_result = []
-        #     for i in range(in_set_size):
-        #         reg = self.linear_regs[i](h[batch,i,:])
-        #         batch_result.append(reg)
-        #
-        #     batch_result = torch.cat(batch_result, dim=1)
-        #     pred_reg_result.append(batch_result)
-        #
-        # pred_reg_result = self.cat(pred_reg_result, dim=0)
+                    # Calculate the results
+                    batch_reg.append(reg_model(x))
+                    batch_attri.append(attri_model(x))
 
-        pred_reg_result = self.linear_reg(h)
+                # Stack the results of one frame
+                batch_reg = torch.stack(batch_reg)
+                batch_attri = torch.stack(batch_attri)
+
+                pred_reg_result.append(batch_reg)
+                pred_attri.append(batch_attri)
+
+            # Stack the results of all batches
+            pred_reg_result = torch.stack(pred_reg_result)
+            pred_attri = torch.stack(pred_attri)
+
+        # If FALSE, use the same decoder for all object types
+        else:
+            pred_reg_result = self.linear_reg(h)
+            pred_attri = self.linear_attri(h)
+
+        # Regression prediction postprocessing
         pred_reg_vel = pred_reg_result[:, :, 0:self.obj_reg_len]
         pred_reg = objs[:, :, 0:self.obj_reg_len] + pred_reg_vel
         pred_reg_var = pred_reg_result[:, :, self.obj_reg_len:None]
         pred_reg_var = pred_reg_var**2 + 1e-6           # Prevent zero covariance causing errors
-        pred_attri = self.linear_attri(h)
 
         # Extract the output masks
         pred_mask = pred_attri[:, :, 0]
+
+        # Extract the output types (should be the same as the input types)
+        pred_type = objs[:, :, 4:4+self.obj_type_len]
 
         # pred_pos = objs + pred_delta
         if debug:
@@ -218,7 +231,8 @@ class VariancePointNet(pl.LightningModule):
         return {'pred_attri': pred_attri,
                 'pred_mask': pred_mask,
                 'pred_reg': pred_reg,
-                'pred_reg_var': pred_reg_var}
+                'pred_reg_var': pred_reg_var,
+                'pred_type': pred_type}
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
@@ -226,29 +240,30 @@ class VariancePointNet(pl.LightningModule):
 
     def loss_fn(self, pred, gt_label):
         # Perform the matching
-        match_results = self.matcher(pred, gt_label)
+        # match_results = self.matcher(pred, gt_label)
 
-        # Calculate the loss for regression and masking seperately
+        # Calculate the loss for regression and masking separately
         loss_reg = 0
         loss_reg_var = 0
         loss_mask = 0
 
         # Iterate through all batches
-        for batch_idx, match_result in enumerate(match_results):
-            pred_raw = pred["pred_reg"][batch_idx]
-            pred_reg_raw = pred_raw[:, 0:2]
+        for batch_idx in range(pred["pred_reg"].shape[0]):
+        # for batch_idx, match_result in enumerate(match_results):
+            pred_reg_raw = pred["pred_reg"][batch_idx]
+            pred_reg_raw = pred_reg_raw[:, 0:self.obj_reg_len]
             pred_reg_var_raw = pred["pred_reg_var"][batch_idx]
 
             gt_raw = gt_label[batch_idx]
-            gt_raw_reg = gt_raw[:, 0:2]
+            gt_reg_raw = gt_raw[:, 0:2]
 
-            pred_var_reordered = match_result["pred_var_reordered"]
-            pred_matched = match_result['pred_reordered']
-            gt_matched = match_result['gt_reordered']
+            # pred_var_reordered = match_result["pred_var_reordered"]
+            # pred_reg_matched = match_result['pred_reg_reordered']
+            # gt_reg_matched = match_result['gt_reg_reordered']
 
             # Loss for regression (position)
             # loss_reg += self.loss_reg_criterion(pred_matched, gt_matched)
-            loss_reg += self.loss_reg_criterion(pred_reg_raw, gt_raw_reg)
+            loss_reg += self.loss_reg_criterion(pred_reg_raw, gt_reg_raw)
 
             # Alternative:
             # print(gt_matched)
@@ -260,14 +275,14 @@ class VariancePointNet(pl.LightningModule):
             # pred_diff_square = match_result['pred_diff'] ** 2
             # zero_diff = torch.zeros_like(pred_diff_square, device=self.device)
             # loss_reg_var += self.loss_reg_criterion(pred_diff_square, zero_diff)
-            loss_reg_var += torch.mean((torch.abs(pred_reg_var_raw) - torch.abs(gt_raw_reg - pred_reg_raw)) ** 2)
+            loss_reg_var += torch.mean((torch.abs(pred_reg_var_raw) - torch.abs(gt_reg_raw - pred_reg_raw)) ** 2)
 
             # Loss for output mask
-            pred_mask = pred['pred_mask'][batch_idx]
-            tgt_mask = match_result['tgt_mask']
+            # pred_mask = pred['pred_mask'][batch_idx]
+            # tgt_mask = match_result['tgt_mask']
             # print("Pred mask", pred_mask.shape)
             # print("Tgt mask", tgt_mask.shape)
-            loss_mask = self.loss_mask_criterion(pred_mask, tgt_mask)
+            # loss_mask = self.loss_mask_criterion(pred_mask, tgt_mask)
 
         # summing all the losses
         loss = (loss_reg + loss_reg_var) * self.loss_reg_weight + loss_mask * self.loss_mask_weight
