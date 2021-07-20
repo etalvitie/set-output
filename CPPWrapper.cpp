@@ -67,6 +67,7 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 			appear_path = appear_ckpt_path.c_str();
 		}
 
+		// build parameter values and call constructor
 		CPyObject args = Py_BuildValue("(ssOOiiiii)",
 									exist_path,
 									appear_path,
@@ -111,9 +112,10 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 	// cout << x << endl;
 	// cout << y << endl;
 
-	// if class exists and can be called
+	// if predict function exists and can be called
 	if (predict && PyCallable_Check(predict))
 	{
+		// convert vector to PyTuple object
 		PyObject *set = vectorToPyTuple(s);
 
 		Py_ssize_t actionSize = a.size();
@@ -122,10 +124,8 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			PyTuple_SET_ITEM(action, i, PyFloat_FromDouble(a.at(i)));
 		}
 
+		// call predict function
 		CPyObject pyTuple = PyObject_CallFunction(predict, "(OO)", set, action);
-
-		cout << "called predict function in python..." << endl;
-		cout << "ASKDASDKASDJA" << endl;
 
 		if (pyTuple == NULL) 
 		{
@@ -147,6 +147,8 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			cout << "ERROR: returned a nontuple" << endl;
 		}
 
+		// decref(set);
+		// Py_DECREF(action);
 	}
 	else
 	{
@@ -176,6 +178,7 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 		throw logic_error("Passed PyObject pointer was not a list array...");
 	}
 
+	//Py_DECREF(incoming);
 	return output;
 }
 
@@ -183,12 +186,15 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 void CPPWrapper::updateModel(vector<vector<float>> s_, vector<float> a_, 
 								vector<vector<float>> sprime_, vector<vector<float>> sappear_, float r)
 {
+	// get updateModel function as attribute string
 	CPyObject updateModel = PyObject_GetAttrString(model_, "updateModel");
 
+	// if updateModel function exists and is callable
 	if (updateModel && PyCallable_Check(updateModel))
 	{
-		string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(updateModel), "utf-8", "~E~"));
-		cout << y << endl;
+		// check if updateModel is NULL here
+		// string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(updateModel), "utf-8", "~E~"));
+		// cout << y << endl;
 
 		PyObject *s = vectorToPyTuple(s_);
 		PyObject *sprime = vectorToPyTuple(sprime_);
@@ -201,8 +207,12 @@ void CPPWrapper::updateModel(vector<vector<float>> s_, vector<float> a_,
 		}
 
 		PyObject_CallFunction(updateModel, "(OOOOf)", s, action, sprime, sappear, r);
-
-		cout << "Updated model successfully!" << endl;
+		
+		// deallocate <- UNNECESSARY
+		// Py_DECREF(action);
+		// decref(s);
+		// decref(sprime);
+		// decref(sappear);
 	}
 	else 
 	{
