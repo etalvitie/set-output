@@ -103,6 +103,7 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 
 	// test
 	// string x = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(predict), "utf-8", "~E~"));
+	PyErr_Print();
 
 	// if class exists and can be called
 	if (predict && PyCallable_Check(predict))
@@ -118,6 +119,7 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 		CPyObject pyTuple = PyObject_CallFunction(predict, "(OO)", set, action);
 
 		cout << "called predict function in python..." << endl;
+		cout << "ASKDASDKASDJA" << endl;
 
 		if (pyTuple == NULL) 
 		{
@@ -139,8 +141,6 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			cout << "ERROR: returned a nontuple" << endl;
 		}
 
-		decref(set);
-		Py_DECREF(action);
 	}
 	else
 	{
@@ -170,7 +170,6 @@ vector<vector<float>> CPPWrapper::pyToVector(PyObject* incoming) {
 		throw logic_error("Passed PyObject pointer was not a list array...");
 	}
 
-	Py_DECREF(incoming);
 	return output;
 }
 
@@ -193,12 +192,6 @@ void CPPWrapper::updateModel(vector<vector<float>> s_, vector<float> a_,
 		}
 
 		PyObject_CallFunction(updateModel, "(OOOOf)", s, action, sprime, sappear, r);
-		
-		// deallocate
-		Py_DECREF(action);
-		decref(s);
-		decref(sprime);
-		decref(sappear);
 
 		cout << "Updated model successfully!" << endl;
 	}
