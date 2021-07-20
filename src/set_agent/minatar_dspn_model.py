@@ -15,26 +15,26 @@ import torch
 from torch.utils.data import Dataset, DataLoader, RandomSampler
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import seaborn as sns
 sns.set_style("whitegrid")
 
 def main():
-    # train_pl()
-    evaluate()
+    train_pl()
+    # evaluate(path="lightning_logs/version_37/checkpoints/epoch=11-step=5603.ckpt")
+    # evaluate(path="lightning_logs/version_36/checkpoints/epoch=9-step=4669.ckpt")
 
 
 def train_pl():
     # Square linear
     # dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
-    dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
     # dataset = MinatarDataset(name="dataset_random_3000_full_matched.json")
+    dataset = MinatarDataset(name="asterix_dataset_random_3000.json")
     dim_dict = dataset.get_dims()
     env_len = dim_dict["action_len"]
     obj_in_len = dim_dict["obj_len"]
-    obj_reg_len = 2
-    obj_attri_len = 2
-    out_set_size = 10
-    hidden_dim = 512
+    type_len = dim_dict["type_len"]
 
     # Prepare the dataloader
     dataset_size = len(dataset)
@@ -47,7 +47,7 @@ def train_pl():
     model = SetDSPN(
         obj_in_len=obj_in_len,
         obj_reg_len=2,
-        obj_attri_len=2,
+        obj_type_len=type_len,
         env_len=env_len,
         latent_dim=64,
         out_set_size=3,
@@ -118,8 +118,9 @@ def evaluate(model=None, path=None):
 
     # Evaluate
     # dataset = MinatarDataset(name="dataset_random_3000_bullet_matched.json")
-    dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
+    # dataset = MinatarDataset(name="dataset_random_3000_new_matched.json")
     # dataset = MinatarDataset(name="dataset_random_3000_full_matched.json")
+    dataset = MinatarDataset(name="asterix_dataset_random_3000_matched.json")
     eval_data_loader = DataLoader(dataset, batch_size=1)
 
     print("loaded dataset...")
@@ -150,20 +151,28 @@ def visualize(pred, s, gt_sprime, gt_sappear):
     pred_mask = pred['pred_mask'][0].detach()
     pred_pos = pred['pred_reg'][0][:, 0:2].detach()
     pred_pos_var = pred['pred_reg_var'][0][:, 0:2].detach()
-    pred_pos_var = pred_pos_var[:, 0] + pred_pos_var[:, 1]
 
     # Plot predictions
     pred_data = {
         "x": pred_pos[:, 0],
         "y": pred_pos[:, 1],
-        "var": pred_pos_var,
-        "vis": pred_mask
+        "var": pred_pos_var[:, 0] + pred_pos_var[:, 1],
+        "vis": pred_mask.cpu().numpy(),
+        "xvar": pred_pos_var[:, 0],
+        "yvar": pred_pos_var[:, 1]
     }
+
     sns.relplot(
         data=pred_data, x='x', y='y',
-        size='var', alpha=0.5, hue='vis',
-        legend='full'
+        alpha=1, hue='vis',
+        legend='full', palette='flare'
     )
+    plt.errorbar(pred_data['x'], pred_data['y'],
+                 xerr=pred_data['xvar'],
+                 yerr=pred_data['yvar'],
+                 marker='.', c='C3', alpha=0.2,
+                 linestyle='None')
+
 
     # Plot ground truth
     if len(gt_sappear) != 0:

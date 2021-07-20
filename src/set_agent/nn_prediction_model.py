@@ -1,5 +1,8 @@
+import random
+
 from src.dspn.SetDSPN import SetDSPN
 from src.simple_pointnet.variance_pointnet import VariancePointNet
+from src.simple_pointnet.num_pointnet import NumPointnet
 
 import os
 import glob
@@ -11,13 +14,18 @@ class PredictionModel:
     def __init__(self,
                  exist_ckpt_path=None,
                  appear_ckpt_path=None,
+                 rwd_ckpt_path=None,
                  train_exist=True,
                  train_appear=True,
+                 train_rwd=True,
                  obj_in_len=None,
                  env_len=None,
                  obj_reg_len=2,
-                 obj_attri_len=2,
-                 new_set_size=3):
+                 obj_type_len=2,
+                 appear_set_size=3,
+                 accumulate_batches=64,
+                 exist_type_separate=False,
+                 appear_type_separate=False):
 
         # Element-wise prediction model for existing objects
         self.train_exist = train_exist
@@ -28,8 +36,9 @@ class PredictionModel:
                 env_len=env_len,
                 obj_in_len=obj_in_len,
                 obj_reg_len=obj_reg_len,
-                obj_attri_len=obj_attri_len,
-                hidden_dim=512
+                obj_type_len=obj_type_len,
+                hidden_dim=512,
+                type_separate=exist_type_separate
             )
 
         # Prediction model for appearing objects
@@ -40,14 +49,26 @@ class PredictionModel:
             self.appear_model = SetDSPN(
                 obj_in_len=obj_in_len,
                 obj_reg_len=obj_reg_len,
-                obj_attri_len=obj_attri_len,
+                obj_type_len=obj_type_len,
                 env_len=env_len,
                 latent_dim=64,
-                out_set_size=new_set_size,
+                out_set_size=appear_set_size,
                 n_iters=10,
                 internal_lr=50,
                 overall_lr=1e-3,
                 loss_encoder_weight=1
+            )
+
+        # Prediction model for rewards
+        self.train_rwd = train_rwd
+        if rwd_ckpt_path is not None:
+            self.rwd_model = NumPointnet.load_from_checkpoint(rwd_ckpt_path)
+        else:
+            self.rwd_model = NumPointnet(
+                env_len=env_len,
+                obj_in_len=obj_in_len,
+                out_len=1,
+                variance_type="separate"
             )
 
         # Decide whether to run the model on CPU or GPU
@@ -55,11 +76,17 @@ class PredictionModel:
         self.device = torch.device(dev)
         self.exist_model = self.exist_model.to(self.device)
         self.appear_model = self.appear_model.to(self.device)
+        self.rwd_model = self.rwd_model.to(self.device)
         print("Using GPU?", "True" if dev == 'cuda:0' else "False")
 
         # Optimizers
         self.exist_optimizer = torch.optim.Adam(self.exist_model.parameters(), lr=1e-3)
         self.appear_optimizer = torch.optim.Adam(self.appear_model.parameters(), lr=1e-3)
+        self.rwd_optimizer = torch.optim.Adam(self.rwd_model.parameters(), lr=1e-3)
+
+        # Accumulate grad batches
+        self.accumulate_batches = accumulate_batches
+        self.exist_loss, self.appear_loss, self.rwd_loss = 0, 0, 0
 
         # Flags and logging
         self.iter_count = 0
@@ -80,19 +107,40 @@ class PredictionModel:
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
 
-        # Update existing obj model
-        if self.train_exist:
-            exist_loss = self.exist_model.training_step(train_batch, self.iter_count)
-            self.exist_optimizer.zero_grad()
-            exist_loss.backward()
-            self.exist_optimizer.step()
+        # Accumulates the losses
+        self.exist_loss += self.exist_model.training_step(train_batch, self.iter_count)
+        self.appear_loss += self.appear_model.training_step(train_batch, self.iter_count)
+        self.rwd_loss += self.rwd_model.training_step(train_batch, self.iter_count)
 
-        # Update appearing obj model
-        if self.train_appear:
-            appear_loss = self.appear_model.training_step(train_batch, self.iter_count)
-            self.appear_optimizer.zero_grad()
-            appear_loss.backward()
-            self.appear_optimizer.step()
+        # Update the models when there are enough batches
+        if self.iter_count % self.accumulate_batches == 0:
+            self.exist_loss /= self.accumulate_batches
+            self.appear_loss /= self.accumulate_batches
+            self.rwd_loss /= self.accumulate_batches
+
+            # Update existing obj model
+            torch.autograd.set_detect_anomaly(True)
+            if self.train_exist:
+                self.exist_optimizer.zero_grad()
+                self.exist_loss.backward(retain_graph=True)
+                self.exist_optimizer.step()
+
+            # Update appearing obj model
+            if self.train_appear:
+                self.appear_optimizer.zero_grad()
+                self.appear_loss.backward(retain_graph=True)
+                self.appear_optimizer.step()
+
+            # Update reward model
+            if self.train_rwd:
+                self.rwd_optimizer.zero_grad()
+                self.rwd_loss.backward()
+                self.rwd_optimizer.step()
+
+            # Reset loss
+            self.exist_loss = 0
+            self.appear_loss = 0
+            self.rwd_loss = 0
 
         # Increase iter counter
         self.iter_count += 1
@@ -119,6 +167,7 @@ class PredictionModel:
         # Predicts the existing objects and new objects
         sprime = self.exist_model(s, a)['pred_reg']
         sappear = self.appear_model(s, a)['pred_reg']
+        rwd = self.rwd_model(s, a)['pred_val']
         
         # Concatenate the two matrixes
         s_ = torch.cat([sprime, sappear], dim=1)
@@ -127,7 +176,8 @@ class PredictionModel:
         sprime = sprime.detach().cpu().numpy().tolist()[0]
         sappear = sappear.detach().cpu().numpy().tolist()[0]
         s_ = s_.detach().cpu().numpy().tolist()[0]
-        return s_, sprime, sappear
+        rwd = rwd.detach().cpu().numpy().tolist()[0]
+        return s_, sprime, sappear, rwd
 
     def _tensorfy(self, m):
         """
@@ -151,19 +201,35 @@ class PredictionModel:
         return m_
 
 
-"""
-Test code
-"""
 def main():
-    model = PredictionModel(obj_in_len=8, env_len=6)
+    """
+    Test code
+    """
+    # Train dataset
+    from datasets.MinatarDataset.MinatarDataset import MinatarDataset
+    dataset = MinatarDataset(name="asterix_dataset_random_3000.json")
+    dim_dict = dataset.get_dims()
+    env_len = dim_dict["action_len"]
+    obj_in_len = dim_dict["obj_len"]
+    type_len = dim_dict["type_len"]
 
-    s = [[0] * 8] * 2
-    a = [0] * 6
-    sprime = [[0] * 8] * 2
-    sappear = [[0] * 8] * 3
-    r = 0
+    # Constrcut the model
+    model = PredictionModel(obj_in_len=obj_in_len,
+                            env_len=env_len,
+                            obj_type_len=type_len,
+                            accumulate_batches=4,
+                            exist_type_separate=True,
+                            appear_type_separate=True)
 
-    model.updateModel(s, a, sprime, sappear, r)
+    # Train
+    for _ in range(5):
+        idx = random.randint(0, len(dataset))
+        batch = dataset[idx] # s, a, sprime, sappear, r
+        batch_ = []
+        for item in batch:
+            batch_.append(item.numpy().tolist())
+        batch_[-1] = batch_[-1][0]
+        model.updateModel(*batch_)
 
     return 0
 

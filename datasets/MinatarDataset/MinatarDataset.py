@@ -41,7 +41,7 @@ class MinatarDataset(Dataset):
             s, a, sprime, sappear, r = template
             self.action_len = len(a)
             self.obj_len = len(s[0])
-            self.num_types = self.obj_len - 5
+            self.type_len = self.obj_len - 5
 
         else:
             print("Matched dataset not found. Matching...")
@@ -54,7 +54,7 @@ class MinatarDataset(Dataset):
             s, a, sprime, r = template
             self.action_len = len(a)
             self.obj_len = len(s[0][0])
-            self.num_types = self.obj_len - 5
+            self.type_len = self.obj_len - 5
 
             # Perform matching
             self.data_matched = []
@@ -187,7 +187,8 @@ class MinatarDataset(Dataset):
     def get_dims(self):
         dim_dict = {
             "action_len": self.action_len,
-            "obj_len": self.obj_len
+            "obj_len": self.obj_len,
+            "type_len": self.type_len
         }
         return dim_dict
 
