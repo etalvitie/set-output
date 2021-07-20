@@ -141,3 +141,5 @@ dmypy.json
 # NN logs
 lightning_logs/*
 runs/*
+
+*.o

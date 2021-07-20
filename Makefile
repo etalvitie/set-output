@@ -4,16 +4,19 @@ OPTS = -g -Wall -std=c++1z
 
 # real compilation requirements
 Main: Main.o CPPWrapper.o
-	clang++ $(INC) $(LIB) -o Main Main.o
+	clang++ $(INC) $(LIB) -o Main Main.o CPPWrapper.o
 
 CPPWrapper: CPPWrapper.o
 	clang++ $(INC) $(LIB) -o CPPWrapper CPPWrapper.o
 
-Main.o: main.cpp CPPWrapper.cpp ObjectState.cpp
+Main.o: main.cpp CPPWrapper.hpp ObjectState.cpp
 	clang++ $(OPTS) $(INC) -c main.cpp
 
 CPPWrapper.o: CPPWrapper.cpp CPPWrapper.hpp CPyObject.hpp ObjectState.cpp
 	clang++ $(OPTS) $(INC) -c CPPWrapper.cpp
+
+
+
 
 # run_file: run_file.o
 # 	clang++ $(INC) $(LIB) -o run_file run_file.o

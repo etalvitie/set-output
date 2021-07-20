@@ -94,7 +94,6 @@ class PredictionModel:
     def updateModel(self, s, a, sprime, sappear, r):
         """
         Update the prediction model using labeled data
-
         Args:
             s: [Python Array] current object states.
             a: [Python Array] action taken.
@@ -103,6 +102,7 @@ class PredictionModel:
             r:  [Float] Reward of the action state pair.
         """
         # Converts input into the format that the existing model needs
+        print("into updatemodel on python side!!")
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
@@ -144,16 +144,15 @@ class PredictionModel:
 
         # Increase iter counter
         self.iter_count += 1
+
         return
 
     def predict(self, s, a):
         """
         Makes prediction on the object states in the next frame based the current object states and player action.
-
         Args:
             s: [torch.Tensor] Current object states of size [1xMxN]
             a: [torch.Tensor] Action vector of size [1xV]
-
         Returns:
             [s_, sprime, sappear]
             s_: Prediction set: sprime + sappear
@@ -183,10 +182,8 @@ class PredictionModel:
         """
         Notice: assuming that the input is provided as Python list.
         Converts the input vector/matrix to the desired format of the model (torch Tensor)
-
         Args:
             m: input vector/matrix
-
         Returns:
             m_: formatted torch Tensor
         """
