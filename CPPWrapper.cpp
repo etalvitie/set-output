@@ -13,22 +13,32 @@ using namespace std;
 
 CPPWrapper::CPPWrapper(string exist_ckpt_path,
 						string appear_ckpt_path,
+						string rwd_ckpt_path,
 						bool train_exist,
 						bool train_appear,
+						bool train_rwd,
 						size_t obj_in_len,
 						size_t env_len,
 						size_t obj_reg_len,
 						size_t obj_attri_len,
-						size_t new_set_size) : 
+						size_t new_set_size,
+						size_t accumulate_batches,
+						bool exist_type_separate,
+						bool appear_type_separate) : 
 				exist_ckpt_path(exist_ckpt_path),
                 appear_ckpt_path(appear_ckpt_path),
+				rwd_ckpt_path(rwd_ckpt_path),
                 train_exist(train_exist),
                 train_appear(train_appear),
+				train_rwd(train_rwd),
                 obj_in_len(obj_in_len),
                 env_len(env_len),
                 obj_reg_len(obj_reg_len),
                 obj_attri_len(obj_attri_len),
-                new_set_size(new_set_size)
+                new_set_size(new_set_size),
+				accumulate_batches(accumulate_batches),
+				exist_type_separate(exist_type_separate),
+				appear_type_separate(appear_type_separate)
 {
 
 	// Initialize Python environment
@@ -48,8 +58,10 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 		// get PredictionModel object
 		CPyObject class_ = PyObject_GetAttrString(pModule, "PredictionModel");
 
+		// set checkpoint paths
 		const char* exist_path; 
 		const char* appear_path;
+		const char* rwd_path;
 		if (exist_ckpt_path.empty())
 		{
 			exist_path = nullptr;
@@ -66,18 +78,31 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 		{
 			appear_path = appear_ckpt_path.c_str();
 		}
+		if (rwd_ckpt_path.empty())
+		{
+			rwd_path = nullptr;
+		}
+		else
+		{
+			rwd_path = rwd_ckpt_path.c_str();
+		}
 
 		// build parameter values and call constructor
-		CPyObject args = Py_BuildValue("(ssOOiiiii)",
+		CPyObject args = Py_BuildValue("(sssOOOiiiiiiOO)",
 									exist_path,
 									appear_path,
+									rwd_path,
 									train_exist ? Py_True : Py_False,
 									train_appear? Py_True : Py_False,
+									train_rwd? Py_True : Py_False,
 									obj_in_len,
 									env_len,
 									obj_reg_len,
 									obj_attri_len,
-									new_set_size);
+									new_set_size,
+									accumulate_batches,
+									exist_type_separate? Py_True : Py_False,
+									appear_type_separate? Py_True : Py_False);
 		model_ = PyObject_CallObject(class_, args);
 		if (model_ == NULL) 
 		{
@@ -97,16 +122,16 @@ CPPWrapper::~CPPWrapper() {
 }
 
 // Calls the predict function in Python model
-tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWrapper::predict(const vector<vector<float>>& s, const vector<float>& a)
+tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float> CPPWrapper::predict(const vector<vector<float>>& s, const vector<float>& a)
 {
 	CPyObject predict = PyObject_GetAttrString(model_, "predict");
 	if (predict == NULL)
 	{
 		PyErr_Print();
 	}
-	// CPyObject update = PyObject_GetAttrString(model_, "updateModel");
+	CPyObject update = PyObject_GetAttrString(model_, "updateModel");
 
-	// TEST FOR ATTR STRING
+	//TEST FOR ATTR STRING
 	// string x = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(predict), "utf-8", "~E~"));
 	// string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(update), "utf-8", "~E~"));
 	// cout << x << endl;
@@ -136,11 +161,13 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>> CPPWr
 			Py_ssize_t s_pos = 0;
 			Py_ssize_t sprimepos = 1;
 			Py_ssize_t sappearpos = 2;
+			Py_ssize_t rwdpos = 3;
 
 			vector<vector<float>> s_ = pyToVector(PyTuple_GetItem(pyTuple, s_pos));
 			vector<vector<float>> sprime = pyToVector(PyTuple_GetItem(pyTuple, sprimepos));
 			vector<vector<float>> sappear = pyToVector(PyTuple_GetItem(pyTuple, sappearpos));
-			return make_tuple(s_, sprime, sappear);
+			float rwd = PyFloat_AsDouble(PyTuple_GetItem(pyTuple, rwdpos));
+			return make_tuple(s_, sprime, sappear, rwd);
 		}
 		else
 		{
@@ -188,6 +215,9 @@ void CPPWrapper::updateModel(vector<vector<float>> s_, vector<float> a_,
 {
 	// get updateModel function as attribute string
 	CPyObject updateModel = PyObject_GetAttrString(model_, "updateModel");
+	
+	// string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(updateModel), "utf-8", "~E~"));
+	// cout << y << endl;
 
 	// if updateModel function exists and is callable
 	if (updateModel && PyCallable_Check(updateModel))

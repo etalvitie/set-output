@@ -175,7 +175,7 @@ class PredictionModel:
         sprime = sprime.detach().cpu().numpy().tolist()[0]
         sappear = sappear.detach().cpu().numpy().tolist()[0]
         s_ = s_.detach().cpu().numpy().tolist()[0]
-        rwd = rwd.detach().cpu().numpy().tolist()[0]
+        rwd = rwd.detach().cpu().numpy().tolist()[0][0]
         return s_, sprime, sappear, rwd
 
     def _tensorfy(self, m):
