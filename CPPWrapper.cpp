@@ -129,9 +129,9 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float
 	{
 		PyErr_Print();
 	}
-	CPyObject update = PyObject_GetAttrString(model_, "updateModel");
 
 	//TEST FOR ATTR STRING
+	// CPyObject update = PyObject_GetAttrString(model_, "updateModel");
 	// string x = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(predict), "utf-8", "~E~"));
 	// string y = PyBytes_AS_STRING(PyUnicode_AsEncodedString(PyObject_Repr(update), "utf-8", "~E~"));
 	// cout << x << endl;
@@ -150,7 +150,7 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float
 		}
 
 		// call predict function
-		CPyObject pyTuple = PyObject_CallFunction(predict, "(OO)", set, action);
+		PyObject *pyTuple = PyObject_CallFunction(predict, "(OO)", set, action);
 
 		if (pyTuple == NULL) 
 		{
@@ -173,9 +173,8 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float
 		{
 			cout << "ERROR: returned a nontuple" << endl;
 		}
-
 		// decref(set);
-		// Py_DECREF(action);
+		Py_DECREF(pyTuple);
 	}
 	else
 	{

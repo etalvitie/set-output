@@ -102,7 +102,6 @@ class PredictionModel:
             r:  [Float] Reward of the action state pair.
         """
         # Converts input into the format that the existing model needs
-        print("into updatemodel on python side!!")
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
@@ -164,7 +163,9 @@ class PredictionModel:
         a = self._tensorfy(a)
 
         # Predicts the existing objects and new objects
-        sprime = self.exist_model(s, a)['pred_reg']
+        existResults = self.exist_model(s, a)
+        sprime = existResults['pred_reg']
+        vis = existResults['pred_mask']
         sappear = self.appear_model(s, a)['pred_reg']
         rwd = self.rwd_model(s, a)['pred_val']
         
@@ -176,7 +177,10 @@ class PredictionModel:
         sappear = sappear.detach().cpu().numpy().tolist()[0]
         s_ = s_.detach().cpu().numpy().tolist()[0]
         rwd = rwd.detach().cpu().numpy().tolist()[0][0]
-        return s_, sprime, sappear, rwd
+        vis = vis.detach().cpu().numpy().tolist()[0]
+
+        sprime = [i + [j] for i, j in zip(sprime, vis)]
+        return s_, sprime, sappear, rwd 
 
     def _tensorfy(self, m):
         """
