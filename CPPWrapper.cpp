@@ -117,8 +117,8 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 
 // destructor
 CPPWrapper::~CPPWrapper() {
-	model_.release();
-	Py_Finalize();
+	// model_.release();
+	// Py_Finalize();
 }
 
 // Calls the predict function in Python model
