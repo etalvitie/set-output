@@ -59,10 +59,12 @@ int main(){
     vector<vector<float>> s3{o3};
     vector<vector<float>> s4;
     vector<float> action{0,1,0,0,1,0};
-    
-    CPPWrapper model("","","",true,true,true,8,6,2,2,3,64,false,false);
 
-    tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output = model.predict(s1,action);
+    Py_Initialize();
+    
+    CPPWrapper *model = new CPPWrapper("","","",true,true,true,8,6,2,2,3,64,false,false,false,false);
+
+    tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output = model->predict(s1,action);
 
     vector<vector<float>> sprime = get<1>(output);
     vector<vector<float>> sappear = get<2>(output);
@@ -77,10 +79,10 @@ int main(){
 
     cout << "reward: " << r << endl;
 
-    model.updateModel(s1,action,s1,s4,5.0);
-	model.updateModel(s2,action,s2,s3,10.0);
+    model->updateModel(s1,action,s1,s4,5.0);
+	model->updateModel(s2,action,s2,s3,10.0);
 
-	tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output2 = model.predict(s1,action);
+	tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output2 = model->predict(s1,action);
     vector<vector<float>> sprime2 = get<1>(output2);
     vector<vector<float>> sappear2 = get<2>(output2);
     float r2 = get<3>(output2);
@@ -98,6 +100,11 @@ int main(){
     }
 
     cout << "reward: " << r2 << endl;
+
+    cout << "deleting model..." << endl;
+    delete model;
+
+    Py_Finalize();
 
     return 0;
 };

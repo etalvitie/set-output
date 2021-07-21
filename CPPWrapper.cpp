@@ -24,7 +24,9 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 						size_t new_set_size,
 						size_t accumulate_batches,
 						bool exist_type_separate,
-						bool appear_type_separate) : 
+						bool appear_type_separate,
+						bool initPy,
+						bool finalizePy) : 
 				exist_ckpt_path(exist_ckpt_path),
                 appear_ckpt_path(appear_ckpt_path),
 				rwd_ckpt_path(rwd_ckpt_path),
@@ -38,11 +40,17 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
                 new_set_size(new_set_size),
 				accumulate_batches(accumulate_batches),
 				exist_type_separate(exist_type_separate),
-				appear_type_separate(appear_type_separate)
+				appear_type_separate(appear_type_separate),
+				initPy_(initPy),
+				finalizePy_(finalizePy)
 {
 
 	// Initialize Python environment
-	Py_Initialize();
+	if (initPy_)
+	{
+		cerr << "---CPPWrapper--: Initializing Python Environment---" << endl;
+		Py_Initialize();
+	}
 
 	// path to directory of module
 	const char *scriptDirectoryName = "./";
@@ -117,8 +125,11 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 
 // destructor
 CPPWrapper::~CPPWrapper() {
-	// model_.release();
-	// Py_Finalize();
+	model_.release();
+	if (finalizePy_) {
+      cerr << "---CPPWrapper--: Finalizing Python---" << endl;
+      Py_Finalize();
+   	}
 }
 
 // Calls the predict function in Python model

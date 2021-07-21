@@ -25,7 +25,9 @@ class CPPWrapper{
       size_t new_set_size,
       size_t accumulate_batches,
       bool exist_type_separate,
-      bool appear_type_separate
+      bool appear_type_separate,
+      bool initPy,
+      bool finalizePy
     );
 
     //destructor
@@ -52,6 +54,8 @@ class CPPWrapper{
     size_t accumulate_batches;
     bool exist_type_separate;
     bool appear_type_separate;
+    bool initPy_;
+    bool finalizePy_;
 
     CPyObject model_;
 };
