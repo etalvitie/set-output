@@ -72,9 +72,15 @@ int main(){
     
     for (size_t i = 0; i < sprime.size(); i++) {
         vector<float> temp = sprime.at(i);
-        for (size_t j = 0; j < temp.size(); j++){
-            cout << "element: " << temp.at(j) << endl;
-        }     
+        for (size_t j = 0; j < temp.size(); j++) {
+            if (j == 2) {
+                cout << "visPrediction: " << temp.at(j) << endl;
+            }
+            else {
+                cout << "element: " << temp.at(j) << endl;
+            }
+            
+        }    
     }
 
     cout << "reward: " << r << endl;
