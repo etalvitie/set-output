@@ -6,20 +6,25 @@ from src.simple_pointnet.num_pointnet import NumPointnet
 
 import os
 import glob
+from pathlib import Path
+from datetime import datetime
 
 import torch
+import pytorch_lightning as pl
+from torch.utils.data import Dataset, DataLoader
 
 
-class PredictionModel:
+def load(ckpt_path):
+    """ Helper function for loading a model """
+    return PredictionModel.load_from_checkpoint(ckpt_path)
+
+class PredictionModel(pl.LightningModule):
     def __init__(self,
-                 exist_ckpt_path=None,
-                 appear_ckpt_path=None,
-                 rwd_ckpt_path=None,
                  train_exist=True,
                  train_appear=True,
                  train_rwd=True,
-                 obj_in_len=None,
-                 env_len=None,
+                 obj_in_len=9,
+                 env_len=6,
                  obj_reg_len=2,
                  obj_type_len=2,
                  appear_set_size=3,
@@ -27,62 +32,68 @@ class PredictionModel:
                  exist_type_separate=False,
                  appear_type_separate=False):
 
+        super().__init__()
+        self.save_hyperparameters()
+
         # Element-wise prediction model for existing objects
         self.train_exist = train_exist
-        if exist_ckpt_path is not None:
-            self.exist_model = VariancePointNet.load_from_checkpoint(exist_ckpt_path)
-        else:
-            self.exist_model = VariancePointNet(
-                env_len=env_len,
-                obj_in_len=obj_in_len,
-                obj_reg_len=obj_reg_len,
-                obj_type_len=obj_type_len,
-                hidden_dim=512,
-                type_separate=exist_type_separate
-            )
+        self.exist_model = VariancePointNet(
+            env_len=env_len,
+            obj_in_len=obj_in_len,
+            obj_reg_len=obj_reg_len,
+            obj_type_len=obj_type_len,
+            hidden_dim=512,
+            type_separate=exist_type_separate
+        )
 
         # Prediction model for appearing objects
         self.train_appear = train_appear
-        if appear_ckpt_path is not None:
-            self.appear_model = SetDSPN.load_from_checkpoint(appear_ckpt_path)
-        else:
-            self.appear_model = SetDSPN(
-                obj_in_len=obj_in_len,
-                obj_reg_len=obj_reg_len,
-                obj_type_len=obj_type_len,
-                env_len=env_len,
-                latent_dim=64,
-                out_set_size=appear_set_size,
-                n_iters=10,
-                internal_lr=50,
-                overall_lr=1e-3,
-                loss_encoder_weight=1
-            )
+        self.appear_model = SetDSPN(
+            obj_in_len=obj_in_len,
+            obj_reg_len=obj_reg_len,
+            obj_type_len=obj_type_len,
+            env_len=env_len,
+            latent_dim=64,
+            out_set_size=appear_set_size,
+            n_iters=10,
+            internal_lr=50,
+            overall_lr=1e-3,
+            loss_encoder_weight=1,
+            type_separate=appear_type_separate
+        )
 
         # Prediction model for rewards
         self.train_rwd = train_rwd
-        if rwd_ckpt_path is not None:
-            self.rwd_model = NumPointnet.load_from_checkpoint(rwd_ckpt_path)
-        else:
-            self.rwd_model = NumPointnet(
-                env_len=env_len,
-                obj_in_len=obj_in_len,
-                out_len=1,
-                variance_type="separate"
-            )
+        self.rwd_model = NumPointnet(
+            env_len=env_len,
+            obj_in_len=obj_in_len,
+            out_len=1,
+            variance_type="separate"
+        )
+
+        # if ckpt_path is not None:
+        #     checkpoint = torch.load(ckpt_path)
+        #     self.load_state_dict(checkpoint['model_state_dict'])
 
         # Decide whether to run the model on CPU or GPU
-        dev = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-        self.device = torch.device(dev)
-        self.exist_model = self.exist_model.to(self.device)
-        self.appear_model = self.appear_model.to(self.device)
-        self.rwd_model = self.rwd_model.to(self.device)
-        print("Using GPU?", "True" if dev == 'cuda:0' else "False")
+        # dev = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        # self.device = torch.device(dev)
+        # self.exist_model = self.exist_model.to(self.device)
+        # self.appear_model = self.appear_model.to(self.device)
+        # self.rwd_model = self.rwd_model.to(self.device)
+        # print("Using GPU?", "True" if dev == 'cuda:0' else "False")
 
         # Optimizers
         self.exist_optimizer = torch.optim.Adam(self.exist_model.parameters(), lr=1e-3)
         self.appear_optimizer = torch.optim.Adam(self.appear_model.parameters(), lr=1e-3)
         self.rwd_optimizer = torch.optim.Adam(self.rwd_model.parameters(), lr=1e-3)
+
+        # Trainer for size calculation and saving
+        empty_loader = DataLoader(None)
+        trainer = pl.Trainer(default_root_dir='ckpts',
+                                  max_steps=0,
+                                  num_sanity_val_steps=0)
+        trainer.fit(self, empty_loader)
 
         # Accumulate grad batches
         self.accumulate_batches = accumulate_batches
@@ -101,6 +112,9 @@ class PredictionModel:
             sappear: [Python Array] of next frame object states of appearing objects.
             r:  [Float] Reward of the action state pair.
         """
+        # Set to train mode
+        self.train()
+
         # Converts input into the format that the existing model needs
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
@@ -158,6 +172,9 @@ class PredictionModel:
             sprime: The set of existing objects
             sappear: The set of appearing objects
         """
+        # Set to evaluation mode
+        self.eval()
+
         # Formats the input
         s = self._tensorfy(s)
         a = self._tensorfy(a)
@@ -190,6 +207,38 @@ class PredictionModel:
 
         return s_, sprime, sappear, rwd 
 
+    def save(self, path=None):
+        # Create the checkpoint folder if not existed
+        Path("ckpts").mkdir(parents=True, exist_ok=True)
+
+        # Determine the right path
+        if path is None:
+            now = datetime.now()
+            date_time = now.strftime("%m_%d_%H_%M")
+            filename = date_time + '.ckpt'
+            path = os.path.join("ckpts", filename)
+
+        # Save the model
+        # torch.save({
+        #     'iter': self.iter_count,
+        #     'model_state_dict': self.state_dict(),
+        #     # 'exits_model_state_dict': self.exist_model.state_dict(),
+        #     # 'appear_model_state_dict': self.appear_model.state_dict(),
+        #     # 'rwd_model_state_dict': self.rwd_model.state_dict(),
+        #     'exist_optimizer_state_dict': self.exist_optimizer.state_dict(),
+        #     'appear_optimizer_state_dict': self.appear_optimizer.state_dict(),
+        #     'rwd_optimizer_state_dict': self.rwd_optimizer.state_dict()
+        # }, path)
+
+        # Create an empty dataloader to make pl happy
+        empty_loader = DataLoader(None)
+        trainer = pl.Trainer(default_root_dir='ckpts',
+                             max_steps=0,
+                             num_sanity_val_steps=0)
+        trainer.fit(self, empty_loader)
+        trainer.save_checkpoint(path)
+
+
     def _tensorfy(self, m):
         """
         Notice: assuming that the input is provided as Python list.
@@ -208,6 +257,15 @@ class PredictionModel:
         m_ = m_.unsqueeze(0)
 
         return m_
+
+    def training_step(self, *args, **kwargs):
+        pass
+
+    def train_dataloader(self):
+        pass
+
+    def configure_optimizers(self):
+        pass
 
 
 def main():
@@ -229,6 +287,7 @@ def main():
                             accumulate_batches=4,
                             exist_type_separate=True,
                             appear_type_separate=True)
+    # model = load(ckpt_path="ckpts/")
 
     # Train
     for _ in range(5):
@@ -239,6 +298,8 @@ def main():
             batch_.append(item.numpy().tolist())
         batch_[-1] = batch_[-1][0]
         model.updateModel(*batch_)
+
+    model.save()
 
     return 0
 

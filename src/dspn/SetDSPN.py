@@ -60,12 +60,13 @@ class SetDSPN(pl.LightningModule):
 
         out_obj_len =  obj_reg_len*2 + self.obj_attri_len
         out_set_dim = (out_set_size, out_obj_len)
+        self.out_set_size = out_set_size
         self.out_set_dim = out_set_dim
 
         if type_separate:
-            self.modules = nn.ModuleList()
+            self.nets = nn.ModuleList()
             for _ in range(obj_type_len):
-                self.modules.append(SetDSPN(
+                self.nets.append(SetDSPN(
                     set_encoder=set_encoder,
                     dspn_encoder=dspn_encoder,
                     obj_in_len=obj_in_len,
@@ -94,22 +95,22 @@ class SetDSPN(pl.LightningModule):
             # self.decoder = deepsetnet(dspn_encoder, latent_dim, out_set_dim, n_iters, masks)
             self.decoder = DSPN(dspn_encoder, out_obj_len, out_set_size, n_iters, internal_lr)
 
-            # Output masks
-            self.mask_softmax = nn.Softmax(dim=2)
+        # Output masks
+        self.mask_softmax = nn.Softmax(dim=2)
 
-            self.matcher = VarianceMatcher()
-            # Loss + matching calculation
-            self.matcher = VarianceMatcher()
-            self.loss_reg_criterion = nn.MSELoss()
-            self.loss_mask_criterion = nn.MSELoss()
-            self.loss_encoder_criterion = nn.MSELoss()
-            self.loss_type_criterion = nn.CrossEntropyLoss()
+        self.matcher = VarianceMatcher()
+        # Loss + matching calculation
+        self.matcher = VarianceMatcher()
+        self.loss_reg_criterion = nn.MSELoss()
+        self.loss_mask_criterion = nn.MSELoss()
+        self.loss_encoder_criterion = nn.MSELoss()
+        self.loss_type_criterion = nn.CrossEntropyLoss()
 
-            self.loss_reg_weight = 1
-            self.loss_mask_weight = 1
-            self.loss_encoder_weight = loss_encoder_weight
-            self.loss_spr_weight = loss_spr_weight
-            self.loss_type_weight = loss_type_weight
+        self.loss_reg_weight = 1
+        self.loss_mask_weight = 1
+        self.loss_encoder_weight = loss_encoder_weight
+        self.loss_spr_weight = loss_spr_weight
+        self.loss_type_weight = loss_type_weight
 
 
 
@@ -118,16 +119,19 @@ class SetDSPN(pl.LightningModule):
 
         if self.type_separate:
             results = defaultdict(None)
-            for i in range(len(self.modules)):
-                result = self.modules[i](x, a)
+            for i in range(len(self.nets)):
+                result = self.nets[i](x, a)
 
                 # Force the prediction type
                 pred_type = torch.zeros((bs, self.out_set_size, self.obj_type_len), device=self.device)
                 pred_type[:,:,i] = 1
                 result['pred_type'] = pred_type
 
-                for key in result.keys():
-                    results[key] = torch.cat([results[key], result[key]], dim=1)
+                if len(results) == 0:
+                    results = result
+                else:
+                    for key in result.keys():
+                        results[key] = torch.cat([results[key], result[key]], dim=1)
 
             return results
 
@@ -156,7 +160,7 @@ class SetDSPN(pl.LightningModule):
             result = {'pred_type': pred_type,
                     'pred_mask': pred_mask,
                     'pred_reg': pred_reg,
-                    'scene_vector': h,
+                    'scene_vector': h.unsqueeze(0),
                     'pred_reg_var': pred_reg_var}
             return result
 
@@ -173,7 +177,8 @@ class SetDSPN(pl.LightningModule):
             'loss_reg_var': zero_loss,
             'loss_mask': zero_loss,
             'loss_encoder': zero_loss,
-            'loss_type': zero_loss
+            'loss_type': zero_loss,
+            'loss_spr': zero_loss
         }
 
         # If the output set is empty
@@ -239,7 +244,15 @@ class SetDSPN(pl.LightningModule):
 
             # Loss for the encoder
             gt_scene, gt_mask = self._cvt_to_scene_vect(gt_label)
-            gt_new_set_vector = self.dspn_encoder(gt_scene, gt_mask)
+            if self.type_separate:
+                gt_new_set_vector = []
+                for i in range(self.obj_type_len):
+                    gt_new_set_vector.append(self.nets[i].dspn_encoder(gt_scene, gt_mask))
+                gt_new_set_vector = torch.cat(gt_new_set_vector, dim=0)
+            else:
+                gt_new_set_vector = self.dspn_encoder(gt_scene, gt_mask)
+
+            gt_new_set_vector = gt_new_set_vector.unsqueeze(0)
             scene_vector = pred['scene_vector']
             loss_encoder = self.loss_encoder_criterion(gt_new_set_vector, scene_vector)
 
@@ -271,14 +284,17 @@ class SetDSPN(pl.LightningModule):
         # Calculate the loss
         losses = self.loss_fn(pred, sappear)
 
-        self.log('train_loss', losses['loss'])
-        self.log('train_reg_loss', losses['loss_reg'])
-        self.log('train_reg_var_loss', losses['loss_reg_var'])
-        self.log('train_mask_loss', losses['loss_mask'])
-        self.log('train_encoder_loss', losses['loss_encoder'])
-        if 'loss_spr' in losses:
-            self.log('train_spr_loss', losses['loss_spr'])
-        self.log('train_type_loss', losses['loss_type'])
+        # Log all the losses
+        for key in losses.keys():
+            key_description = "train_" + key
+            self.log(key_description, losses[key])
+        # self.log('train_loss', losses['loss'])
+        # self.log('train_reg_loss', losses['loss_reg'])
+        # self.log('train_reg_var_loss', losses['loss_reg_var'])
+        # self.log('train_mask_loss', losses['loss_mask'])
+        # self.log('train_encoder_loss', losses['loss_encoder'])
+        # self.log('train_spr_loss', losses['loss_spr'])
+        # self.log('train_type_loss', losses['loss_type'])
 
         return losses['loss']
 
@@ -290,13 +306,10 @@ class SetDSPN(pl.LightningModule):
         # Calculate the loss
         losses = self.loss_fn(pred, sappear)
 
-        self.log('val_loss', losses['loss'])
-        self.log('val_reg_loss', losses['loss_reg'])
-        self.log('val_reg_var_loss', losses['loss_reg_var'])
-        self.log('val_mask_loss', losses['loss_mask'])
-        self.log('val_encoder_loss', losses['loss_encoder'])
-        self.log('val_spr_loss', losses['loss_spr'])
-        self.log('val_type_loss', losses['loss_type'])
+        # Log all the losses
+        for key in losses.keys():
+            key_description = "val_" + key
+            self.log(key_description, losses[key])
 
     def _cvt_to_scene_vect(self, gt_label):
         bs, num_obj, _ = gt_label.shape
