@@ -91,6 +91,7 @@ def train_pl():
         accumulate_grad_batches=64,
         profiler="simple",
         auto_lr_find=True,
+        log_every_n_steps=5,
         # callbacks=[early_stop_callback]
     )
     trainer.fit(model, train_data_loader, val_data_loader)

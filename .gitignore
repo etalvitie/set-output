@@ -1,5 +1,6 @@
 # Pytorch Runs
 **/lightning_logs/
+**/ckpts/
 
 # Dataset
 **/*.npy
