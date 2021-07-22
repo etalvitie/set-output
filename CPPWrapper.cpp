@@ -178,14 +178,15 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float
 			vector<vector<float>> sprime = pyToVector(PyTuple_GetItem(pyTuple, sprimepos));
 			vector<vector<float>> sappear = pyToVector(PyTuple_GetItem(pyTuple, sappearpos));
 			float rwd = PyFloat_AsDouble(PyTuple_GetItem(pyTuple, rwdpos));
+
+			// decref(set);
+			// Py_DECREF(pyTuple);
 			return make_tuple(s_, sprime, sappear, rwd);
 		}
 		else
 		{
 			cout << "ERROR: returned a nontuple" << endl;
 		}
-		// decref(set);
-		Py_DECREF(pyTuple);
 	}
 	else
 	{
