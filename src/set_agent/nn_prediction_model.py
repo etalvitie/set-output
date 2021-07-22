@@ -30,13 +30,16 @@ class PredictionModel(pl.LightningModule):
                  appear_set_size=3,
                  accumulate_batches=64,
                  exist_type_separate=False,
-                 appear_type_separate=False):
+                 appear_type_separate=False,
+                 seed=None):
 
         super().__init__()
         self.save_hyperparameters()
 
         # Element-wise prediction model for existing objects
         self.train_exist = train_exist
+        if seed is not None:
+            torch.manual_seed(seed)
         self.exist_model = VariancePointNet(
             env_len=env_len,
             obj_in_len=obj_in_len,
@@ -48,6 +51,8 @@ class PredictionModel(pl.LightningModule):
 
         # Prediction model for appearing objects
         self.train_appear = train_appear
+        if seed is not None:
+            torch.manual_seed(seed)
         self.appear_model = SetDSPN(
             obj_in_len=obj_in_len,
             obj_reg_len=obj_reg_len,
@@ -64,6 +69,8 @@ class PredictionModel(pl.LightningModule):
 
         # Prediction model for rewards
         self.train_rwd = train_rwd
+        if seed is not None:
+            torch.manual_seed(seed)
         self.rwd_model = NumPointnet(
             env_len=env_len,
             obj_in_len=obj_in_len,

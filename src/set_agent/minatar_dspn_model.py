@@ -5,6 +5,7 @@ import random
 
 from src.simple_pointnet.variance_pointnet import VariancePointNet
 from src.dspn.SetDSPN import SetDSPN
+from src.set_transformer import SetTransformer
 from datasets.MinatarDataset.MinatarDataset import MinatarDataset
 
 import glob
@@ -44,17 +45,26 @@ def train_pl():
     val_data_loader = DataLoader(val_set, batch_size=1, pin_memory=True)
 
     # Initialize the model
-    model = SetDSPN(
+    # model = SetDSPN(
+    #     obj_in_len=obj_in_len,
+    #     obj_reg_len=2,
+    #     obj_type_len=type_len,
+    #     env_len=env_len,
+    #     latent_dim=64,
+    #     out_set_size=3,
+    #     n_iters=10,
+    #     internal_lr=50,
+    #     overall_lr=1e-3,
+    #     loss_encoder_weight=1
+    # )
+
+    model = SetTransformer(
         obj_in_len=obj_in_len,
         obj_reg_len=2,
         obj_type_len=type_len,
         env_len=env_len,
-        latent_dim=64,
         out_set_size=3,
-        n_iters=10,
-        internal_lr=50,
-        overall_lr=1e-3,
-        loss_encoder_weight=1
+        learning_rate=1e-4
     )
 
     # Early stop callback
@@ -94,11 +104,30 @@ def train_pl():
         log_every_n_steps=5,
         # callbacks=[early_stop_callback]
     )
-    trainer.fit(model, train_data_loader, val_data_loader)
 
-    # Evaluate
-    # trainer.test(model, test_dataloaders = val_data_loader)
-    evaluate(model=model)
+    lr_finder = False
+    if lr_finder:
+        # Find the ideal lr
+        lr_finder = trainer.tuner.lr_find(model,
+                                          train_dataloader=train_data_loader,
+                                          val_dataloaders=val_data_loader,
+                                          max_lr=0.1,
+                                          min_lr=1e-5)
+        # Results can be found in
+        lr_finder.results
+
+        # Plot with
+        fig = lr_finder.plot(suggest=True)
+        fig.show()
+
+        # Pick point based on plot, or get suggestion
+        new_lr = lr_finder.suggestion()
+    else:
+        trainer.fit(model, train_data_loader, val_data_loader)
+
+        # Evaluate
+        # trainer.test(model, test_dataloaders = val_data_loader)
+        evaluate(model=model)
 
 
 def evaluate(model=None, path=None):
