@@ -288,7 +288,8 @@ class SetDSPN(pl.LightningModule):
         self.log('train_reg_var_loss', losses['loss_reg_var'])
         self.log('train_mask_loss', losses['loss_mask'])
         self.log('train_encoder_loss', losses['loss_encoder'])
-        self.log('train_spr_loss', losses['loss_spr'])
+        if 'loss_spr' in losses:
+            self.log('train_spr_loss', losses['loss_spr'])
         self.log('train_type_loss', losses['loss_type'])
 
         return losses['loss']

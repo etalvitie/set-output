@@ -116,7 +116,6 @@ class PredictionModel(pl.LightningModule):
         self.train()
 
         # Converts input into the format that the existing model needs
-        print("into updatemodel on python side!!")
         train_batch = [s, a, sprime, sappear, [r]]
         for i, stuff in enumerate(train_batch):
             train_batch[i] = self._tensorfy(stuff)
@@ -181,19 +180,32 @@ class PredictionModel(pl.LightningModule):
         a = self._tensorfy(a)
 
         # Predicts the existing objects and new objects
-        sprime = self.exist_model(s, a)['pred_reg']
-        sappear = self.appear_model(s, a)['pred_reg']
+        existResults = self.exist_model(s, a)
+        appearResults = self.appear_model(s, a)
+
+        sprime = existResults['pred_reg']
+        visprime = existResults['pred_mask']
+        sappear = appearResults['pred_reg']
+        visappear = appearResults['pred_mask']
         rwd = self.rwd_model(s, a)['pred_val']
         
         # Concatenate the two matrixes
-        s_ = torch.cat([sprime, sappear], dim=1)
+        # s_ = torch.cat([sprime, sappear], dim=1)
+        # s_ = s_.detach().cpu().numpy().tolist()[0]
 
         # Converts back to Python Array
         sprime = sprime.detach().cpu().numpy().tolist()[0]
         sappear = sappear.detach().cpu().numpy().tolist()[0]
-        s_ = s_.detach().cpu().numpy().tolist()[0]
-        rwd = rwd.detach().cpu().numpy().tolist()[0]
-        return s_, sprime, sappear, rwd
+        rwd = rwd.detach().cpu().numpy().tolist()[0][0]
+        visprime = visprime.detach().cpu().numpy().tolist()[0]
+        visappear = visappear.detach().cpu().numpy().tolist()[0]
+
+        sprime = [i + [j] for i, j in zip(sprime, visprime)]
+        sappear = [i + [j] for i, j in zip(sappear, visappear)]
+
+        s_ = sprime + sappear
+
+        return s_, sprime, sappear, rwd 
 
     def save(self, path=None):
         # Create the checkpoint folder if not existed
