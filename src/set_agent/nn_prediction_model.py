@@ -179,9 +179,6 @@ class PredictionModel(pl.LightningModule):
             sprime: The set of existing objects
             sappear: The set of appearing objects
         """
-        # Set to evaluation mode
-        self.eval()
-
         # Formats the input
         s = self._tensorfy(s)
         a = self._tensorfy(a)
@@ -305,6 +302,7 @@ def main():
             batch_.append(item.numpy().tolist())
         batch_[-1] = batch_[-1][0]
         model.updateModel(*batch_)
+        model.predict(batch_[0], batch_[1])
 
     model.save()
 
