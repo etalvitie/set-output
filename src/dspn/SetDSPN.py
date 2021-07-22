@@ -177,7 +177,8 @@ class SetDSPN(pl.LightningModule):
             'loss_reg_var': zero_loss,
             'loss_mask': zero_loss,
             'loss_encoder': zero_loss,
-            'loss_type': zero_loss
+            'loss_type': zero_loss,
+            'loss_spr': zero_loss
         }
 
         # If the output set is empty
@@ -283,14 +284,17 @@ class SetDSPN(pl.LightningModule):
         # Calculate the loss
         losses = self.loss_fn(pred, sappear)
 
-        self.log('train_loss', losses['loss'])
-        self.log('train_reg_loss', losses['loss_reg'])
-        self.log('train_reg_var_loss', losses['loss_reg_var'])
-        self.log('train_mask_loss', losses['loss_mask'])
-        self.log('train_encoder_loss', losses['loss_encoder'])
-        if 'loss_spr' in losses:
-            self.log('train_spr_loss', losses['loss_spr'])
-        self.log('train_type_loss', losses['loss_type'])
+        # Log all the losses
+        for key in losses.keys():
+            key_description = "train_" + key
+            self.log(key_description, losses[key])
+        # self.log('train_loss', losses['loss'])
+        # self.log('train_reg_loss', losses['loss_reg'])
+        # self.log('train_reg_var_loss', losses['loss_reg_var'])
+        # self.log('train_mask_loss', losses['loss_mask'])
+        # self.log('train_encoder_loss', losses['loss_encoder'])
+        # self.log('train_spr_loss', losses['loss_spr'])
+        # self.log('train_type_loss', losses['loss_type'])
 
         return losses['loss']
 
@@ -302,13 +306,10 @@ class SetDSPN(pl.LightningModule):
         # Calculate the loss
         losses = self.loss_fn(pred, sappear)
 
-        self.log('val_loss', losses['loss'])
-        self.log('val_reg_loss', losses['loss_reg'])
-        self.log('val_reg_var_loss', losses['loss_reg_var'])
-        self.log('val_mask_loss', losses['loss_mask'])
-        self.log('val_encoder_loss', losses['loss_encoder'])
-        self.log('val_spr_loss', losses['loss_spr'])
-        self.log('val_type_loss', losses['loss_type'])
+        # Log all the losses
+        for key in losses.keys():
+            key_description = "val_" + key
+            self.log(key_description, losses[key])
 
     def _cvt_to_scene_vect(self, gt_label):
         bs, num_obj, _ = gt_label.shape
