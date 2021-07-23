@@ -54,32 +54,35 @@ int main(){
     model->updateModel(s1,action,s1,s4,5.0);
 	model->updateModel(s2,action,s2,s3,10.0);
 
-	tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output2 = model->predict(s1,action);
-    vector<vector<float>> sprime2 = get<1>(output2);
-    vector<vector<float>> sappear2 = get<2>(output2);
-    float r2 = get<3>(output2);
-	for (size_t i = 0; i < sprime2.size(); i++) {
-        vector<float> temp = sprime2.at(i);
-        for (size_t j = 0; j < temp.size(); j++) {
-            if (j == temp.size()-1) {
-                cout << "visPrediction: " << temp.at(j) << endl;
-            }
-            else if (j != 0 && j != 1) {
-                cout << "Type vector:";
-                while (j != temp.size() - 1) {
-                    cout << " " << temp.at(j);
-                    ++j;
+    for (size_t count = 0; count < 5; count++)
+    {
+        tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output2 = model->predict(s1,action);
+        vector<vector<float>> sprime2 = get<1>(output2);
+        vector<vector<float>> sappear2 = get<2>(output2);
+        float r2 = get<3>(output2);
+        for (size_t i = 0; i < sprime2.size(); i++) {
+            vector<float> temp = sprime2.at(i);
+            for (size_t j = 0; j < temp.size(); j++) {
+                if (j == temp.size()-1) {
+                    cout << "visPrediction: " << temp.at(j) << endl;
                 }
-                cout << endl;
-                --j;
-            }
-            else {
-                cout << "element: " << temp.at(j) << endl;
+                else if (j != 0 && j != 1) {
+                    cout << "Type vector:";
+                    while (j != temp.size() - 1) {
+                        cout << " " << temp.at(j);
+                        ++j;
+                    }
+                    cout << endl;
+                    --j;
+                }
+                else {
+                    cout << "element: " << temp.at(j) << endl;
+                }
             }
         }
-    }
 
-    cout << "reward: " << r2 << endl;
+        cout << "reward: " << r2 << endl;
+    }
 
     cout << "deleting model..." << endl;
     delete model;

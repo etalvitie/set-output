@@ -167,7 +167,7 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float
 		}
 
 		// call predict function
-		PyObject *pyTuple = PyObject_CallFunction(predict, "(OO)", set, action);
+		CPyObject pyTuple = PyObject_CallFunction(predict, "(OO)", set, action);
 
 		if (pyTuple == NULL) 
 		{
