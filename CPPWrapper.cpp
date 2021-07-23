@@ -11,6 +11,12 @@
 
 using namespace std;
 
+/* obj_in_len = obj_reg_len*2 + obj_attri_len + 1
+// env_len = action vector size
+// obj_reg_len = prediction vector size (xPos and yPos = 2)
+// obj_attri_len = tag size (one-hot encoded)
+// new_set_size = # appear objects prediction
+*/
 CPPWrapper::CPPWrapper(string exist_ckpt_path,
 						string appear_ckpt_path,
 						string rwd_ckpt_path,
@@ -24,7 +30,9 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 						size_t new_set_size,
 						size_t accumulate_batches,
 						bool exist_type_separate,
-						bool appear_type_separate) : 
+						bool appear_type_separate,
+						bool initPy,
+						bool finalizePy) : 
 				exist_ckpt_path(exist_ckpt_path),
                 appear_ckpt_path(appear_ckpt_path),
 				rwd_ckpt_path(rwd_ckpt_path),
@@ -38,11 +46,17 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
                 new_set_size(new_set_size),
 				accumulate_batches(accumulate_batches),
 				exist_type_separate(exist_type_separate),
-				appear_type_separate(appear_type_separate)
+				appear_type_separate(appear_type_separate),
+				initPy_(initPy),
+				finalizePy_(finalizePy)
 {
 
 	// Initialize Python environment
-	Py_Initialize();
+	if (initPy_)
+	{
+		cerr << "---CPPWrapper--: Initializing Python Environment---" << endl;
+		Py_Initialize();
+	}
 
 	// path to directory of module
 	const char *scriptDirectoryName = "./";
@@ -88,10 +102,10 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 		}
 
 		// build parameter values and call constructor
-		CPyObject args = Py_BuildValue("(sssOOOiiiiiiOO)",
-									exist_path,
-									appear_path,
-									rwd_path,
+		CPyObject args = Py_BuildValue("(OOOiiiiiiOO)",
+									// exist_path,
+									// appear_path,
+									// rwd_path,
 									train_exist ? Py_True : Py_False,
 									train_appear? Py_True : Py_False,
 									train_rwd? Py_True : Py_False,
@@ -117,8 +131,11 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 
 // destructor
 CPPWrapper::~CPPWrapper() {
-	// model_.release();
-	// Py_Finalize();
+	model_.release();
+	if (finalizePy_) {
+      cerr << "---CPPWrapper--: Finalizing Python---" << endl;
+      Py_Finalize();
+   	}
 }
 
 // Calls the predict function in Python model
@@ -167,14 +184,15 @@ tuple<vector<vector<float>>, vector<vector<float>>, vector<vector<float>>, float
 			vector<vector<float>> sprime = pyToVector(PyTuple_GetItem(pyTuple, sprimepos));
 			vector<vector<float>> sappear = pyToVector(PyTuple_GetItem(pyTuple, sappearpos));
 			float rwd = PyFloat_AsDouble(PyTuple_GetItem(pyTuple, rwdpos));
+
+			// decref(set);
+			// Py_DECREF(pyTuple);
 			return make_tuple(s_, sprime, sappear, rwd);
 		}
 		else
 		{
 			cout << "ERROR: returned a nontuple" << endl;
 		}
-		// decref(set);
-		Py_DECREF(pyTuple);
 	}
 	else
 	{
