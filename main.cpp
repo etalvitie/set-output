@@ -31,13 +31,21 @@ int main(){
     for (size_t i = 0; i < sprime.size(); i++) {
         vector<float> temp = sprime.at(i);
         for (size_t j = 0; j < temp.size(); j++) {
-            if (j == 2) {
+            if (j == temp.size()-1) {
                 cout << "visPrediction: " << temp.at(j) << endl;
+            }
+            else if (j != 0 && j != 1) {
+                cout << "Type vector:";
+                while (j != temp.size() - 1) {
+                    cout << " " << temp.at(j);
+                    ++j;
+                }
+                cout << endl;
+                --j;
             }
             else {
                 cout << "element: " << temp.at(j) << endl;
             }
-            
         }    
     }
 
@@ -53,13 +61,21 @@ int main(){
 	for (size_t i = 0; i < sprime2.size(); i++) {
         vector<float> temp = sprime2.at(i);
         for (size_t j = 0; j < temp.size(); j++) {
-            if (j == 2) {
+            if (j == temp.size()-1) {
                 cout << "visPrediction: " << temp.at(j) << endl;
+            }
+            else if (j != 0 && j != 1) {
+                cout << "Type vector:";
+                while (j != temp.size() - 1) {
+                    cout << " " << temp.at(j);
+                    ++j;
+                }
+                cout << endl;
+                --j;
             }
             else {
                 cout << "element: " << temp.at(j) << endl;
             }
-            
         }
     }
 

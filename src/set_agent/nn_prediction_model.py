@@ -189,8 +189,10 @@ class PredictionModel(pl.LightningModule):
 
         sprime = existResults['pred_reg']
         visprime = existResults['pred_mask']
+        typeprime = existResults['pred_type']
         sappear = appearResults['pred_reg']
         visappear = appearResults['pred_mask']
+        typeappear = appearResults['pred_type']
         rwd = self.rwd_model(s, a)['pred_val']
         
         # Concatenate the two matrixes
@@ -203,8 +205,12 @@ class PredictionModel(pl.LightningModule):
         rwd = rwd.detach().cpu().numpy().tolist()[0][0]
         visprime = visprime.detach().cpu().numpy().tolist()[0]
         visappear = visappear.detach().cpu().numpy().tolist()[0]
+        typeprime = typeprime.detach().cpu().numpy().tolist()[0]
+        typeappear = typeappear.detach().cpu().numpy().tolist()[0]
 
+        sprime = [i + j for i, j in zip(sprime, typeprime)]
         sprime = [i + [j] for i, j in zip(sprime, visprime)]
+        sappear = [i + j for i, j in zip(sappear, typeappear)]
         sappear = [i + [j] for i, j in zip(sappear, visappear)]
 
         s_ = sprime + sappear
