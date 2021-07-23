@@ -11,6 +11,12 @@
 
 using namespace std;
 
+/* obj_in_len = obj_reg_len*2 + obj_attri_len + 1
+// env_len = action vector size
+// obj_reg_len = prediction vector size (xPos and yPos = 2)
+// obj_attri_len = tag size (one-hot encoded)
+// new_set_size = # appear objects prediction
+*/
 CPPWrapper::CPPWrapper(string exist_ckpt_path,
 						string appear_ckpt_path,
 						string rwd_ckpt_path,
@@ -96,10 +102,10 @@ CPPWrapper::CPPWrapper(string exist_ckpt_path,
 		}
 
 		// build parameter values and call constructor
-		CPyObject args = Py_BuildValue("(sssOOOiiiiiiOO)",
-									exist_path,
-									appear_path,
-									rwd_path,
+		CPyObject args = Py_BuildValue("(OOOiiiiiiOO)",
+									// exist_path,
+									// appear_path,
+									// rwd_path,
 									train_exist ? Py_True : Py_False,
 									train_appear? Py_True : Py_False,
 									train_rwd? Py_True : Py_False,

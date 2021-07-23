@@ -7,62 +7,20 @@
 
 using namespace std;
 
-// vector<vector<float>> test(const vector<vector<float>>& s) 
-// {
-// 	Py_ssize_t row = s.size();
-// 	PyObject *set = PyTuple_New(row);
-// 	for (Py_ssize_t i = 0; i < row; i++) {
-// 		Py_ssize_t col = s.at(i).size();
-// 		PyObject *object = PyTuple_New(col);
-// 		vector<float> temp = s.at(i);
-// 		for (Py_ssize_t j = 0; j < col; j++) {
-// 			PyTuple_SET_ITEM(object, j, PyFloat_FromDouble(temp.at(j)));
-// 		}
-			
-// 		PyTuple_SET_ITEM(set, i, object);
-// 	}
-
-// 	Py_ssize_t idx = 0;
-// 	Py_ssize_t length = PyList_Size(set);
-// 	Py_ssize_t height = PyList_Size(PyList_GetItem(set, idx));
-// 	vector<vector<float>> output;
-	
-// 	if (PyList_Check(set)) {
-// 		for (Py_ssize_t i = 0; i < length; i++) {
-// 			CPyObject item = PyList_GetItem(set, i);
-// 			vector<float> obj;
-			
-// 			for (Py_ssize_t j = 0; j < height; j++) {
-// 				obj.push_back(PyLong_AsLong(PyList_GetItem(set, j)));
-// 			}
-
-// 			output.push_back(obj);
-// 		}
-// 	} else {
-// 		throw logic_error("Passed PyObject pointer was not a list array...");
-// 	}
-
-//     for (Py_ssize_t i = 0; i < PyList_Size(set); i++) {
-// 		Py_DECREF(PyList_GetItem(set, i));
-// 	}
-//     Py_DECREF(set);
-
-// 	return output;
-// }
-
 int main(){
-    vector<float> o1{0,0,0,0,0,0,0,0};
-    vector<float> o2{1,1,1,1,1,1,1,1};
-    vector<float> o3{2,2,2,2,2,2,2,2};
+    // type needs to be one-hot encoding
+    vector<float> o1{3,9,-1,0,1,0,0,0,0,0,1};
+    vector<float> o2{0.9166666865348816,0.0,-0.0833333358168602,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0};
+    vector<float> o3{2,2,0,0,1,0,0,0,0,0,1};
     vector<vector<float>> s1{o1,o2,o3};
     vector<vector<float>> s2{o1,o2};
     vector<vector<float>> s3{o3};
     vector<vector<float>> s4;
-    vector<float> action{0,1,0,0,1,0};
+    vector<float> action{0,0,0,0,1,0};
 
     Py_Initialize();
     
-    CPPWrapper *model = new CPPWrapper("","","",true,true,true,8,6,2,2,3,64,false,false,false,false);
+    CPPWrapper *model = new CPPWrapper("","","",true,true,true,11,6,2,6,3,64,false,false,false,false);
 
     tuple<vector<vector<float>>,vector<vector<float>>,vector<vector<float>>,float> output = model->predict(s1,action);
 
